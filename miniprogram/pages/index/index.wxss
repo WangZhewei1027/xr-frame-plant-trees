@@ -1,0 +1,87 @@
+.container {
+  min-height: 100vh;
+  padding: 40rpx;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  box-sizing: border-box;
+}
+
+.header {
+  text-align: center;
+  padding: 80rpx 0 60rpx;
+}
+
+.title {
+  display: block;
+  font-size: 56rpx;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 16rpx;
+}
+
+.subtitle {
+  display: block;
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.menu {
+  margin-top: 40rpx;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 24rpx;
+  padding: 40rpx;
+  margin-bottom: 32rpx;
+  backdrop-filter: blur(10px);
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+}
+
+.menu-item:active {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(0.98);
+}
+
+.menu-icon {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48rpx;
+  margin-right: 32rpx;
+}
+
+.ar-icon {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.upload-icon {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.menu-content {
+  flex: 1;
+}
+
+.menu-title {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8rpx;
+}
+
+.menu-desc {
+  display: block;
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.menu-arrow {
+  font-size: 36rpx;
+  color: rgba(255, 255, 255, 0.4);
+}

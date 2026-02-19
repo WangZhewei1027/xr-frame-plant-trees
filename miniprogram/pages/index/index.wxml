@@ -1,9 +1,26 @@
-<view>
-  <xr-start
-    disable-scroll
-    id="main-frame"
-    width="{{renderWidth}}"
-    height="{{renderHeight}}"
-    style="width:{{width}}px;height:{{height}}px;"
-  />
+<view class="container">
+  <view class="header">
+    <text class="title">AR 空间</text>
+    <text class="subtitle">探索与创造你的AR世界</text>
+  </view>
+
+  <view class="menu">
+    <view class="menu-item" bindtap="goToAR">
+      <view class="menu-icon ar-icon">🔮</view>
+      <view class="menu-content">
+        <text class="menu-title">AR 体验</text>
+        <text class="menu-desc">进入AR空间，查看附近的内容</text>
+      </view>
+      <view class="menu-arrow">→</view>
+    </view>
+
+    <view class="menu-item" bindtap="goToUpload">
+      <view class="menu-icon upload-icon">✏️</view>
+      <view class="menu-content">
+        <text class="menu-title">上传文字</text>
+        <text class="menu-desc">将文字放入当前位置的AR空间</text>
+      </view>
+      <view class="menu-arrow">→</view>
+    </view>
+  </view>
 </view>

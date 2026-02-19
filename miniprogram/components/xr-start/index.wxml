@@ -12,13 +12,13 @@
             <xr-gltf model="anchor"></xr-gltf>
         </xr-ar-tracker>
         <!-- <xr-node node-id="setitem" visible="false">
-      <xr-gltf model="gltf-item" scale="0.006 0.006 0.006"></xr-gltf>
-    </xr-node> -->
+            <xr-gltf model="gltf-item" scale="0.006 0.006 0.006"></xr-gltf>
+        </xr-node> -->
 
-        <xr-node position="0 0 0" scale="0.1 0.1 0.1">
+        <!-- <xr-node position="0 0 0" scale="0.1 0.1 0.1">
             <xr-mesh position="0 0 -0.01" rotation="90 0 0" scale="8 1 8" geometry="plane" states="renderQueue: 2009, alphaMode: BLEND, cullOn: false" uniforms="u_baseColorFactor:0.2 0.6 0.2 0.8"></xr-mesh>
             <xr-text value="居中" position="0 0 0" never-cull size="2" anchor="0.5 0.5" uniforms="u_baseColorFactor:1.0 1.0 1.0 1"></xr-text>
-        </xr-node>
+        </xr-node> -->
 
         <!-- 坐标系提示，单位1 的坐标轴 -->
         <xr-mesh node-id="mesh-x" position="1 0 0" scale="2 0.02 0.02" geometry="cube" uniforms="u_baseColorFactor:0.7 0.3 0.3 1"></xr-mesh>

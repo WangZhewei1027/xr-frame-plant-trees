@@ -1,6 +1,4 @@
 {
-    "usingComponents": {
-      "xr-start": "../../components/xr-start/index"
-    },
-    "disableScroll": true
-  }
+  "usingComponents": {},
+  "navigationBarTitleText": "AR 空间"
+}

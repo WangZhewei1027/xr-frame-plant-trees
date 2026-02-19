@@ -1,6 +1,8 @@
 {
   "pages": [
     "pages/index/index",
+    "pages/ar/ar",
+    "pages/upload/upload",
     "pages/logs/logs"
   ],
   "window": {
@@ -8,6 +10,16 @@
     "navigationBarTitleText": "Weixin",
     "navigationBarBackgroundColor": "#ffffff"
   },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于获取附近的AR素材"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation",
+    "startLocationUpdate",
+    "onLocationChange"
+  ],
   "style": "v2",
   "componentFramework": "glass-easel",
   "lazyCodeLoading": "requiredComponents"
