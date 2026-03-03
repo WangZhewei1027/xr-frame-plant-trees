@@ -1,4 +1,6 @@
 {
   "usingComponents": {},
-  "navigationBarTitleText": "AR 空间"
+  "navigationBarTitleText": "灵岩元宇宙",
+  "navigationBarBackgroundColor": "#1F1F1F",
+  "navigationBarTextStyle": "white"
 }

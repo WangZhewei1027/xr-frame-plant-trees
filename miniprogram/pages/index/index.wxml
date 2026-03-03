@@ -1,17 +1,23 @@
 <view class="container">
   <view class="header">
-    <text class="title">AR 空间</text>
-    <text class="subtitle">探索与创造你的AR世界</text>
+    <view class="logo-mark"></view>
+    <text class="title">灵岩元宇宙</text>
+    <text class="subtitle">虚实相生 · 灵境无界</text>
   </view>
 
   <view class="menu">
-    <view class="menu-item" bindtap="goToAR">
-      <view class="menu-icon ar-icon">🔮</view>
-      <view class="menu-content">
-        <text class="menu-title">进入AR空间</text>
-        <text class="menu-desc">探索附近内容，上传文字到AR世界</text>
+    <view class="card" bindtap="goToAR">
+      <view class="card-content">
+        <text class="card-title">开启旅程</text>
+        <text class="card-desc">探索 AR 景观与互动体验</text>
       </view>
-      <view class="menu-arrow">→</view>
+      <view class="card-action">
+        <view class="arrow"></view>
+      </view>
     </view>
+  </view>
+
+  <view class="footer">
+    <text>Lingyan Metaverse</text>
   </view>
 </view>

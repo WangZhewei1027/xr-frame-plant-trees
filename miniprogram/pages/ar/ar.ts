@@ -71,6 +71,14 @@ Page({
       return;
     }
 
+    // 立即在 XR 空间中发射弹幕
+    const sendText = textContent.trim();
+    this.setData({ textContent: "", canSubmit: false });
+    const xrComp = this.selectComponent("#main-frame");
+    if (xrComp) {
+      xrComp.showDanmakuInXR(sendText);
+    }
+
     this.setData({ isSubmitting: true });
     try {
       const { statusCode } = await supabaseRpc("upload_text_asset", {
@@ -78,18 +86,15 @@ Page({
         user_lng: location.longitude,
         p_workspace_id: CONFIG.workspaceId,
         p_organization_id: CONFIG.organizationId,
-        content: textContent.trim(),
+        content: sendText,
       });
 
-      if (statusCode === 200) {
-        wx.showToast({ title: "上传成功", icon: "success" });
-        this.setData({ textContent: "", canSubmit: false });
-      } else {
+      if (statusCode !== 200) {
         throw new Error(`上传失败: ${statusCode}`);
       }
     } catch (err) {
       console.error("[上传] 错误:", err);
-      wx.showToast({ title: "上传失败", icon: "error" });
+      wx.showToast({ title: "发送失败", icon: "error" });
     } finally {
       this.setData({ isSubmitting: false });
     }
