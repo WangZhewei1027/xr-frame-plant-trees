@@ -1,9 +1,7 @@
 {
   "pages": [
     "pages/index/index",
-    "pages/ar/ar",
-    "pages/upload/upload",
-    "pages/logs/logs"
+    "pages/ar/ar"
   ],
   "window": {
     "navigationBarTextStyle": "black",

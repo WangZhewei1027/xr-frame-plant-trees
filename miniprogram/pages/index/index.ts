@@ -8,10 +8,4 @@ Page({
       url: "/pages/ar/ar",
     });
   },
-
-  goToUpload() {
-    wx.navigateTo({
-      url: "/pages/upload/upload",
-    });
-  },
 });

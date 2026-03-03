@@ -1,4 +1,5 @@
-<view>
+<view class="page-container">
+  <!-- AR 底层画布 -->
   <xr-start
     disable-scroll
     id="main-frame"
@@ -6,4 +7,24 @@
     height="{{renderHeight}}"
     style="width:{{width}}px;height:{{height}}px;"
   />
+
+  <!-- 底部弹幕输入栏 -->
+  <view class="danmaku-bar">
+    <view class="gps-dot {{location ? 'gps-ok' : 'gps-fail'}}"></view>
+    <input
+      class="danmaku-input"
+      placeholder="发个弹幕到AR世界~"
+      value="{{textContent}}"
+      bindinput="onTextInput"
+      maxlength="200"
+      confirm-type="send"
+      bindconfirm="submitText"
+    />
+    <view
+      class="danmaku-send {{canSubmit ? 'active' : ''}}"
+      bindtap="submitText"
+    >
+      <image class="send-icon" src="/assets/send.svg" mode="aspectFit" />
+    </view>
+  </view>
 </view>
