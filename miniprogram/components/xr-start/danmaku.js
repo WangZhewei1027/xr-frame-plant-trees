@@ -98,5 +98,73 @@ module.exports = function (XR_CONFIG) {
         this.flyingDanmakus.splice(finished[i], 1);
       }
     },
+
+    /**
+     * 每帧驱动：已落位的 text node 之间互相排斥，像磁铁同极相斥。
+     * 只对不在飞行中的节点施加斥力，避免干扰飞入动画。
+     */
+    tickRepulsion() {
+      const xr = wx.getXrFrameSystem();
+      if (!this.nodeList || this.nodeList.length < 2) return;
+
+      // ── 可调参数 ──────────────────────────────────
+      const REPULSION_RADIUS = 0.8; // 斥力作用半径 (米)
+      const REPULSION_STRENGTH = 0.003; // 每帧最大位移量
+      const MIN_DIST = 0.001; // 防止除零
+
+      // 收集已落位节点（不在飞行列表中）
+      const flyingSet = new Set((this.flyingDanmakus || []).map((d) => d.node));
+
+      const settled = [];
+      for (const node of this.nodeList) {
+        if (flyingSet.has(node)) continue;
+        const trs = node.getComponent(xr.Transform);
+        if (!trs) continue;
+        settled.push({
+          trs,
+          x: trs.position.x,
+          y: trs.position.y,
+          z: trs.position.z,
+        });
+      }
+
+      if (settled.length < 2) return;
+
+      // 计算每个节点受到的斥力位移（先累加再应用，避免顺序偏差）
+      const offsets = settled.map(() => ({ x: 0, y: 0, z: 0 }));
+
+      for (let i = 0; i < settled.length; i++) {
+        for (let j = i + 1; j < settled.length; j++) {
+          const a = settled[i];
+          const b = settled[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const dz = a.z - b.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+          if (dist >= REPULSION_RADIUS || dist < MIN_DIST) continue;
+
+          // 强度随距离线性衰减
+          const force = REPULSION_STRENGTH * (1 - dist / REPULSION_RADIUS);
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const nz = dz / dist;
+
+          offsets[i].x += nx * force;
+          offsets[i].y += ny * force;
+          offsets[i].z += nz * force;
+          offsets[j].x -= nx * force;
+          offsets[j].y -= ny * force;
+          offsets[j].z -= nz * force;
+        }
+      }
+
+      // 应用位移
+      for (let i = 0; i < settled.length; i++) {
+        const s = settled[i];
+        const o = offsets[i];
+        s.trs.position.setValue(s.x + o.x, s.y + o.y, s.z + o.z);
+      }
+    },
   };
 };

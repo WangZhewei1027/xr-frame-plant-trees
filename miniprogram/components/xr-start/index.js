@@ -121,6 +121,7 @@ Component({
       this.lastCamPos = { x: camPos.x, z: camPos.z };
 
       this.tickFlyingDanmakus();
+      this.tickRepulsion();
 
       for (const el of this.textList) {
         const trs = el?.getComponent(xr.Transform);

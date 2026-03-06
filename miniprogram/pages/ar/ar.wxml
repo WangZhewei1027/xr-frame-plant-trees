@@ -8,23 +8,80 @@
     style="width:{{width}}px;height:{{height}}px;"
   />
 
-  <!-- 底部弹幕输入栏 -->
-  <view class="danmaku-bar">
-    <view class="gps-dot {{location ? 'gps-ok' : 'gps-fail'}}"></view>
-    <input
-      class="danmaku-input"
-      placeholder="发个弹幕到AR世界~"
-      value="{{textContent}}"
-      bindinput="onTextInput"
-      maxlength="200"
-      confirm-type="send"
-      bindconfirm="submitText"
-    />
-    <view
-      class="danmaku-send {{canSubmit ? 'active' : ''}}"
-      bindtap="submitText"
-    >
-      <image class="send-icon" src="/assets/send.svg" mode="aspectFit" />
+  <!-- 打卡成功弹窗 -->
+  <view class="checkin-mask" wx:if="{{showCheckinModal}}" bindtap="closeCheckinModal">
+    <view class="checkin-modal" catchtap="">
+      <text class="checkin-modal-title">🎉 {{checkinShopName}} 打卡成功</text>
+      <image class="checkin-modal-img" src="{{checkinImageUrl}}" mode="aspectFit" />
+      <view class="checkin-modal-actions">
+        <view class="checkin-save-btn" bindtap="saveCheckinImage">保存到相册</view>
+        <view class="checkin-close-btn" bindtap="closeCheckinModal">关闭</view>
+      </view>
     </view>
+  </view>
+
+  <!-- ===== 底部区域 ===== -->
+  <view class="bottom-area">
+
+    <!-- 店铺卡片列表（悬浮在输入栏上方） -->
+    <scroll-view
+      class="shop-scroll {{showShopPanel ? 'show' : ''}}"
+      scroll-x
+      enhanced
+      show-scrollbar="{{false}}"
+      wx:if="{{showShopPanel}}"
+    >
+      <block wx:if="{{shopsLoading}}">
+        <view class="shop-loading">加载中…</view>
+      </block>
+      <block wx:elif="{{shops.length === 0}}">
+        <view class="shop-loading">暂无店铺</view>
+      </block>
+      <block wx:else>
+        <view class="shop-card" wx:for="{{shops}}" wx:key="id">
+          <image class="shop-card-img" src="{{item.file_url}}" mode="aspectFill" />
+          <view class="shop-card-right">
+            <text class="shop-card-name">{{item.name}}</text>
+            <text class="shop-card-desc">{{item.text_content}}</text>
+            <view class="shop-card-bottom">
+              <text class="shop-card-dist" wx:if="{{item.distance !== undefined}}">📍 {{item.distance}}m</text>
+              <text class="shop-card-dist" wx:else>📍 定位中…</text>
+              <view
+                class="shop-checkin-btn {{item.canCheckin ? 'active' : 'disabled'}}"
+                bindtap="onCheckin"
+                data-idx="{{index}}"
+              >
+                {{item.canCheckin ? '打卡' : '太远了'}}
+              </view>
+            </view>
+          </view>
+        </view>
+      </block>
+    </scroll-view>
+
+    <!-- 弹幕输入栏（始终可见） -->
+    <view class="danmaku-bar">
+      <view class="gps-dot {{location ? 'gps-ok' : 'gps-fail'}}"></view>
+      <input
+        class="danmaku-input"
+        placeholder="发个弹幕到AR世界~"
+        value="{{textContent}}"
+        bindinput="onTextInput"
+        maxlength="200"
+        confirm-type="send"
+        bindconfirm="submitText"
+      />
+      <view
+        class="danmaku-send {{canSubmit ? 'active' : ''}}"
+        bindtap="submitText"
+      >
+        <image class="send-icon" src="/assets/send.svg" mode="aspectFit" />
+      </view>
+      <view class="bar-divider"></view>
+      <view class="shop-toggle {{showShopPanel ? 'shop-toggle-on' : ''}}" bindtap="toggleShopPanel">
+        <image class="shop-toggle-icon" src="/assets/circle-check-big.svg" mode="aspectFit" />
+      </view>
+    </view>
+
   </view>
 </view>
