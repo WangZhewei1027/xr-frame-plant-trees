@@ -24,40 +24,43 @@
   <view class="bottom-area">
 
     <!-- 店铺卡片列表（悬浮在输入栏上方） -->
-    <scroll-view
-      class="shop-scroll {{showShopPanel ? 'show' : ''}}"
-      scroll-x
-      enhanced
-      show-scrollbar="{{false}}"
-      wx:if="{{showShopPanel}}"
-    >
+    <view class="shop-swiper-wrap" wx:if="{{showShopPanel}}">
       <block wx:if="{{shopsLoading}}">
         <view class="shop-loading">加载中…</view>
       </block>
       <block wx:elif="{{shops.length === 0}}">
         <view class="shop-loading">暂无店铺</view>
       </block>
-      <block wx:else>
-        <view class="shop-card" wx:for="{{shops}}" wx:key="id">
-          <image class="shop-card-img" src="{{item.file_url}}" mode="aspectFill" />
-          <view class="shop-card-right">
-            <text class="shop-card-name">{{item.name}}</text>
-            <text class="shop-card-desc">{{item.text_content}}</text>
-            <view class="shop-card-bottom">
-              <text class="shop-card-dist" wx:if="{{item.distance !== undefined}}">📍 {{item.distance}}m</text>
-              <text class="shop-card-dist" wx:else>📍 定位中…</text>
-              <view
-                class="shop-checkin-btn {{item.canCheckin ? 'active' : 'disabled'}}"
-                bindtap="onCheckin"
-                data-idx="{{index}}"
-              >
-                {{item.canCheckin ? '打卡' : '太远了'}}
+      <swiper
+        wx:else
+        class="shop-swiper"
+        previous-margin="60rpx"
+        next-margin="60rpx"
+        current="{{selectedShopIdx}}"
+        bindchange="onSwiperChange"
+      >
+        <swiper-item wx:for="{{shops}}" wx:key="id">
+          <view class="shop-card {{selectedShopIdx === index ? 'selected' : ''}}">
+            <image class="shop-card-img" src="{{item.file_url}}" mode="aspectFill" />
+            <view class="shop-card-right">
+              <text class="shop-card-name">{{item.name}}</text>
+              <text class="shop-card-desc">{{item.text_content}}</text>
+              <view class="shop-card-bottom">
+                <text class="shop-card-dist" wx:if="{{item.distance !== undefined}}">📍 {{item.distance}}m</text>
+                <text class="shop-card-dist" wx:else>📍 定位中…</text>
+                <view
+                  class="shop-checkin-btn {{item.canCheckin ? 'active' : 'disabled'}}"
+                  bindtap="onCheckin"
+                  data-idx="{{index}}"
+                >
+                  {{item.canCheckin ? '打卡' : '太远了'}}
+                </view>
               </view>
             </view>
           </view>
-        </view>
-      </block>
-    </scroll-view>
+        </swiper-item>
+      </swiper>
+    </view>
 
     <!-- 弹幕输入栏（始终可见） -->
     <view class="danmaku-bar">

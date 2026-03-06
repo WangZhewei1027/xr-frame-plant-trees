@@ -121,52 +121,63 @@ page {
   height: 40rpx;
 }
 
-/* ===== 店铺卡片滚动区 ===== */
-.shop-scroll {
+/* ===== 店铺卡片 Swiper ===== */
+.shop-swiper-wrap {
   width: 100%;
-  white-space: nowrap;
-  padding: 16rpx 24rpx;
-  box-sizing: border-box;
+  padding: 12rpx 0;
+}
+
+.shop-swiper {
+  width: 100%;
+  height: 200rpx;
 }
 
 .shop-loading {
-  display: inline-block;
   color: rgba(255, 255, 255, 0.5);
   font-size: 26rpx;
-  padding: 32rpx;
+  padding: 32rpx 40rpx;
 }
 
 /* ===== 店铺卡片（横向布局） ===== */
 .shop-card {
-  display: inline-flex;
+  display: flex;
   flex-direction: row;
-  width: 520rpx;
-  margin-right: 20rpx;
+  align-items: stretch;
+  margin: 0 12rpx;
+  height: 180rpx;
   border-radius: 16rpx;
   overflow: hidden;
-  vertical-align: top;
   background: rgba(30, 30, 30, 0.65);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  transition:
+    box-shadow 0.3s,
+    transform 0.3s;
+  transform: scale(0.9);
+  box-sizing: border-box;
 }
-.shop-card:last-child {
-  margin-right: 0;
+.shop-card.selected {
+  box-shadow:
+    0 0 24rpx rgba(255, 255, 255, 0.4),
+    0 4rpx 20rpx rgba(0, 0, 0, 0.3);
+  transform: scale(1);
 }
 
 .shop-card-img {
   width: 180rpx;
   height: 180rpx;
   flex-shrink: 0;
-  border-radius: 16rpx;
+  border-radius: 16rpx 0 0 16rpx;
 }
 
 .shop-card-right {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 8rpx 16rpx 8rpx 20rpx;
+  padding: 12rpx 16rpx 12rpx 20rpx;
   white-space: normal;
   min-width: 0;
+  overflow: hidden;
 }
 
 .shop-card-name {

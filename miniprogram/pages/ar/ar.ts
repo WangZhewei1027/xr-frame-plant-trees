@@ -54,6 +54,7 @@ Page({
     showShopPanel: false,
     shops: [] as ShopItem[],
     shopsLoading: false,
+    selectedShopIdx: 0,
     // 打卡弹窗
     showCheckinModal: false,
     checkinImageUrl: "",
@@ -248,34 +249,49 @@ Page({
     const url = this.data.checkinImageUrl;
     if (!url) return;
     wx.showLoading({ title: "保存中…" });
-    wx.downloadFile({
-      url,
-      success: (res) => {
-        if (res.statusCode !== 200) {
-          wx.hideLoading();
-          wx.showToast({ title: "下载失败", icon: "error" });
-          return;
-        }
+    // 用 getImageInfo 获取网络图片的本地临时路径
+    wx.getImageInfo({
+      src: url,
+      success: (imgRes) => {
         wx.saveImageToPhotosAlbum({
-          filePath: res.tempFilePath,
+          filePath: imgRes.path,
           success: () => {
             wx.hideLoading();
             wx.showToast({ title: "已保存到相册", icon: "success" });
           },
-          fail: () => {
+          fail: (err) => {
             wx.hideLoading();
-            wx.showToast({ title: "保存失败，请授权相册权限", icon: "none" });
+            // 用户拒绝授权时引导开启
+            if (/auth|deny|authorize/i.test(String(err?.errMsg))) {
+              wx.showModal({
+                title: "需要相册权限",
+                content: "请在设置中开启相册权限以保存图片",
+                confirmText: "去设置",
+                success: (modalRes) => {
+                  if (modalRes.confirm) {
+                    wx.openSetting({});
+                  }
+                },
+              });
+            } else {
+              wx.showToast({ title: "保存失败", icon: "error" });
+            }
           },
         });
       },
       fail: () => {
         wx.hideLoading();
-        wx.showToast({ title: "下载失败", icon: "error" });
+        wx.showToast({ title: "图片加载失败", icon: "error" });
       },
     });
   },
 
   closeShopPanel() {
     this.setData({ showShopPanel: false });
+  },
+
+  /** swiper 切换时更新选中索引 */
+  onSwiperChange(e: WechatMiniprogram.SwiperChange) {
+    this.setData({ selectedShopIdx: e.detail.current });
   },
 });
