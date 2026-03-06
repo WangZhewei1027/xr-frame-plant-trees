@@ -11,7 +11,7 @@
   <!-- 打卡成功弹窗 -->
   <view class="checkin-mask" wx:if="{{showCheckinModal}}" bindtap="closeCheckinModal">
     <view class="checkin-modal" catchtap="">
-      <text class="checkin-modal-title">🎉 {{checkinShopName}} 打卡成功</text>
+      <text class="checkin-modal-title">{{checkinShopName}} 打卡成功</text>
       <image class="checkin-modal-img" src="{{checkinImageUrl}}" mode="aspectFit" />
       <view class="checkin-modal-actions">
         <view class="checkin-save-btn" bindtap="saveCheckinImage">保存到相册</view>
