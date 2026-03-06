@@ -40,6 +40,22 @@ function getDistanceMeters(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/** Haversine 方位角：从 (lat1,lng1) 到 (lat2,lng2)，正北=0，顺时针，度 */
+function getBearing(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
 Page({
   data: {
     width: 300,
@@ -59,6 +75,11 @@ Page({
     showCheckinModal: false,
     checkinImageUrl: "",
     checkinShopName: "",
+    // 导航视图
+    isNavigating: false,
+    navShopName: "",
+    navDistance: "",
+    navRelAngle: 0, // 目标相对设备朝向的角度[-180,180]，用于 UI 箭头旋转
   },
 
   onLoad() {
@@ -76,6 +97,8 @@ Page({
     this.getLocation();
     // 持续定位，用于距离判断
     (this as any)._locationTimer = setInterval(() => this.getLocation(), 5000);
+    // 罗盘订阅
+    this._startCompassWatch();
   },
 
   onUnload() {
@@ -83,6 +106,7 @@ Page({
       clearInterval((this as any)._locationTimer);
       (this as any)._locationTimer = null;
     }
+    this._stopCompassWatch();
   },
 
   onTextInput(e: WechatMiniprogram.Input) {
@@ -181,6 +205,10 @@ Page({
       }
       const shops = this.computeDistances(data);
       this.setData({ shops });
+      // 自动导航到第一个店铺
+      if (shops.length > 0) {
+        this._activateNavigation(shops[0]);
+      }
     } catch (err) {
       console.error("[店铺] 加载错误:", err);
       wx.showToast({ title: "加载店铺失败", icon: "error" });
@@ -214,6 +242,8 @@ Page({
     if (this.data.shops.length === 0) return;
     const shops = this.computeDistances(this.data.shops);
     this.setData({ shops });
+    // 同步更新导航 UI 距离
+    this._refreshNavUI();
   },
 
   /** 点击打卡按钮 */
@@ -292,6 +322,75 @@ Page({
 
   /** swiper 切换时更新选中索引 */
   onSwiperChange(e: WechatMiniprogram.SwiperChange) {
-    this.setData({ selectedShopIdx: e.detail.current });
+    const idx = e.detail.current;
+    this.setData({ selectedShopIdx: idx });
+    // 切换店铺就更新导航目标
+    const shop = this.data.shops[idx];
+    if (shop) this._activateNavigation(shop);
+  },
+
+  // ========== 罗盘 / 导航 ==========
+
+  _startCompassWatch() {
+    wx.startCompass({
+      success: () => {
+        wx.onCompassChange((res: any) => {
+          const heading: number = res.direction ?? res.heading ?? 0;
+          (this as any)._compassHeading = heading;
+          // 将最新航向推送到 XR 组件
+          const xrComp = this.selectComponent("#main-frame") as any;
+          if (xrComp) xrComp.updateCompassHeading(heading);
+          // 更新 UI 跦向负荷
+          this._refreshNavUI();
+        });
+      },
+    });
+  },
+
+  _stopCompassWatch() {
+    wx.stopCompass({});
+  },
+
+  /** 激活指定店铺的导航 */
+  _activateNavigation(shop: ShopItem) {
+    const xrComp = this.selectComponent("#main-frame") as any;
+    if (xrComp) xrComp.setNavigationTarget(shop);
+    this.setData({
+      isNavigating: true,
+      navShopName: shop.name,
+      navDistance: shop.distance != null ? `${shop.distance}m` : "",
+    });
+    this._refreshNavUI();
+  },
+
+  /** 根据最新 GPS + 罗盘计算 UI 跦向角 */
+  _refreshNavUI() {
+    if (!this.data.isNavigating) return;
+    const loc = this.data.location;
+    const shops = this.data.shops;
+    const idx = this.data.selectedShopIdx;
+    const shop = shops[idx];
+    if (!loc || !shop) return;
+
+    const bearing = getBearing(
+      loc.latitude,
+      loc.longitude,
+      shop.latitude,
+      shop.longitude,
+    );
+    const compass = (this as any)._compassHeading ?? 0;
+    let relAngle = bearing - compass;
+    relAngle = ((relAngle + 540) % 360) - 180;
+
+    const dist = getDistanceMeters(
+      loc.latitude,
+      loc.longitude,
+      shop.latitude,
+      shop.longitude,
+    );
+    this.setData({
+      navRelAngle: Math.round(relAngle),
+      navDistance: `${Math.round(dist)}m`,
+    });
   },
 });

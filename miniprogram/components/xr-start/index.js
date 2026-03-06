@@ -2,6 +2,7 @@ const gps = require("./gps");
 const createAssetsMethods = require("./assets");
 const createDanmakuMethods = require("./danmaku");
 const particle = require("./particle");
+const navigation = require("./navigation");
 
 const XR_CONFIG = {
   maxDistanceMeters: 500,
@@ -32,6 +33,15 @@ Component({
         firstFetchDone: false,
         currentGPS: null,
         isFetchingAssets: false,
+        // 导航状态
+        _navTarget: null,
+        _navActive: false,
+        _compassHeading: null,
+        _navNodes: [],
+        _navParticleEls: [],
+        _navLabelNode: null,
+        _navLabelTextEl: null,
+        _lastNavLabel: "",
       });
       this.startGPSWatch();
     },
@@ -62,6 +72,9 @@ Component({
 
     // ─── 粒子爆发 ───────────────────────────────────
     ...particle,
+
+    // ─── 导航粒子系统 ─────────────────────────────────
+    ...navigation,
 
     // ─── 场景节点管理 ───────────────────────────────
     getCamTransform() {
@@ -96,6 +109,11 @@ Component({
         src: XR_CONFIG.treeModelUrl,
       });
       this.gltfModel = model;
+
+      // 若导航目标在场景就绪前已设置，延迟创建导航系统
+      if (this._navTarget) {
+        this._createNavSystem(this._navTarget);
+      }
     },
 
     handleAssetsLoaded() {

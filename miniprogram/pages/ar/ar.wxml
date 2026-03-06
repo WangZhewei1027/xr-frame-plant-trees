@@ -8,6 +8,22 @@
     style="width:{{width}}px;height:{{height}}px;"
   />
 
+  <!-- 导航方向覆层 -->
+  <view class="nav-overlay" wx:if="{{isNavigating}}">
+    <!-- 方向盘：圆形 + 旋转箭头 -->
+    <view class="nav-compass-ring">
+      <view class="nav-arrow-wrap" style="transform: rotate({{navRelAngle}}deg)">
+        <view class="nav-arrow-head"></view>
+        <view class="nav-arrow-tail"></view>
+      </view>
+    </view>
+    <!-- 店铺名 + 距离 -->
+    <view class="nav-info-row">
+      <text class="nav-shop-name">{{navShopName}}</text>
+      <text class="nav-dist">{{navDistance}}</text>
+    </view>
+  </view>
+
   <!-- 打卡成功弹窗 -->
   <view class="checkin-mask" wx:if="{{showCheckinModal}}" bindtap="closeCheckinModal">
     <view class="checkin-modal" catchtap="">
