@@ -12,6 +12,7 @@ module.exports = {
 
   startGPSWatch() {
     wx.startLocationUpdate({
+      type: "wgs84",
       success: () => {
         wx.onLocationChange((res) => this.updateGPS(res));
         this.locationWatchId = true;
@@ -23,6 +24,8 @@ module.exports = {
   getLocationOnce() {
     wx.getLocation({
       type: "wgs84",
+      isHighAccuracy: true,
+      highAccuracyExpireTime: 3000,
       success: (res) => this.updateGPS(res),
       fail: (err) => console.error("[GPS] 定位失败", err),
     });
