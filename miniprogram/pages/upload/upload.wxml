@@ -1,0 +1,49 @@
+<view class="container">
+  <view class="header">
+    <text class="title">上传文字</text>
+    <text class="subtitle">将文字放入AR空间</text>
+  </view>
+
+  <view class="form">
+    <view class="input-group">
+      <text class="label">文字内容</text>
+      <textarea
+        class="textarea"
+        placeholder="请输入要显示的文字..."
+        value="{{textContent}}"
+        bindinput="onTextInput"
+        maxlength="200"
+      />
+      <text class="char-count">{{textContent.length}}/200</text>
+    </view>
+
+    <view class="location-info" wx:if="{{location}}">
+      <text class="location-label">📍 当前位置</text>
+      <text class="location-text">经度: {{location.lngStr}}</text>
+      <text class="location-text">纬度: {{location.latStr}}</text>
+    </view>
+
+    <view class="btn-group">
+      <button 
+        class="btn btn-location" 
+        bindtap="getLocation"
+        loading="{{isGettingLocation}}"
+      >
+        {{location ? '重新获取位置' : '获取当前位置'}}
+      </button>
+
+      <button 
+        class="btn btn-submit" 
+        bindtap="submitText"
+        disabled="{{!canSubmit}}"
+        loading="{{isSubmitting}}"
+      >
+        上传文字
+      </button>
+    </view>
+  </view>
+
+  <view class="back-link" bindtap="goBack">
+    <text>← 返回首页</text>
+  </view>
+</view>

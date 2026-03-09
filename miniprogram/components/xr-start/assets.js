@@ -106,11 +106,14 @@ module.exports = function (XR_CONFIG) {
         // 避免 createElement 字符串属性在 AR 模式下被清空或变为摄像机相对坐标
         const rootNode = scene.createElement(xr.XRNode, {
           id: `model-node-${this.nodeIdCounter++}`,
-          scale: "0.3 0.3 0.3",
         });
         this.shadowRoot.addChild(rootNode);
         // 节点挂入场景后再写入世界位置，确保锚定在 AR 世界坐标中而非跟随相机
-        rootNode.getComponent(xr.Transform).position.setValue(x, y, z);
+        const transform = rootNode.getComponent(xr.Transform);
+        transform.position.x = x;
+        transform.position.y = y;
+        transform.position.z = z;
+        transform.scale.setValue(0.3, 0.3, 0.3);
 
         const gltfEl = scene.createElement(xr.XRGLTF);
         gltfEl.getComponent(xr.GLTF).setData({ model });
