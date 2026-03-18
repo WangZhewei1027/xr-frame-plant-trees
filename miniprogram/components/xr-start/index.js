@@ -23,8 +23,8 @@ Component({
     attached() {
       Object.assign(this, {
         nodeIdCounter: 0,
-        nodeList: [],
-        textList: [],
+        nodeList: [], // [{ assetId, node, billboardEl }]
+        spatialAudioList: [],
         flyingDanmakus: [],
         particleTimers: [],
         lastCamPos: null,
@@ -55,8 +55,32 @@ Component({
         this.particleTimers = [];
       }
       this.flyingDanmakus = [];
+      for (const entry of this.nodeList) {
+        try {
+          this.shadowRoot?.removeChild(entry.node);
+        } catch (_) {}
+      }
       this.nodeList = [];
-      this.textList = [];
+      if (this.spatialAudioList) {
+        for (const entry of this.spatialAudioList) {
+          try {
+            entry.source.stop();
+          } catch (_) {}
+          try {
+            entry.panner.disconnect();
+          } catch (_) {}
+          try {
+            entry.gainNode.disconnect();
+          } catch (_) {}
+        }
+        this.spatialAudioList = [];
+      }
+      if (this._audioCtx) {
+        try {
+          this._audioCtx.close();
+        } catch (_) {}
+        this._audioCtx = null;
+      }
     },
   },
 
@@ -84,14 +108,9 @@ Component({
     },
 
     removeOldestNode() {
-      const removedNode = this.nodeList.shift();
-      this.textList.shift();
-      try {
-        this.shadowRoot.removeChild(removedNode);
-      } catch (e) {}
-      this.flyingDanmakus = this.flyingDanmakus.filter(
-        (d) => d.node !== removedNode,
-      );
+      if (!this.nodeList.length) return;
+      const entry = this.nodeList.shift();
+      this._destroyNode(entry);
     },
 
     // ─── XR 事件处理 ────────────────────────────────
@@ -140,8 +159,10 @@ Component({
 
       this.tickFlyingDanmakus();
       this.tickRepulsion();
+      this.tickSpatialAudio();
 
-      for (const el of this.textList) {
+      for (const entry of this.nodeList) {
+        const el = entry.billboardEl;
         const trs = el?.getComponent(xr.Transform);
         if (!trs) continue;
         this.FACING.set(trs.worldPosition).sub(camPos, this.FACING);

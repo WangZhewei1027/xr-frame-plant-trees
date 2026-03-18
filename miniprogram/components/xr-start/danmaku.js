@@ -35,7 +35,6 @@ module.exports = function (XR_CONFIG) {
         scale: "0.02 0.02 0.02",
       });
       this.shadowRoot.addChild(rootNode);
-      this.nodeList.push(rootNode);
 
       const textEl = scene.createElement(xr.XRText, {
         position: "0 0 0",
@@ -46,7 +45,8 @@ module.exports = function (XR_CONFIG) {
         uniforms: "u_baseColorFactor:1.0 1.0 1.0 1",
       });
       rootNode.addChild(textEl);
-      this.textList.push(textEl);
+      // assetId = null 表示弹幕节点，不参与远程素材的 diff 对比
+      this._registerNode(null, rootNode, textEl);
 
       this.flyingDanmakus.push({
         node: rootNode,
@@ -116,8 +116,9 @@ module.exports = function (XR_CONFIG) {
       const flyingSet = new Set((this.flyingDanmakus || []).map((d) => d.node));
 
       const settled = [];
-      for (const node of this.nodeList) {
-        if (flyingSet.has(node)) continue;
+      for (const entry of this.nodeList) {
+        const node = entry.node;
+        if (!node || flyingSet.has(node)) continue;
         const trs = node.getComponent(xr.Transform);
         if (!trs) continue;
         settled.push({
