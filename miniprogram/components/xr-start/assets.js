@@ -72,12 +72,18 @@ module.exports = function (XR_CONFIG) {
     /**
      * 统一注册一个已创建好的场景节点。
      * 提供双重 maxNodeCount 保护（应对异步竞态），超出时驱逐最旧节点。
+     * audioRefs: 可选，{ source, gainNode, panner }，销毁时一并停止音频。
      */
-    _registerNode(assetId, node, billboardEl) {
+    _registerNode(assetId, node, billboardEl, audioRefs) {
       while (this.nodeList.length >= XR_CONFIG.maxNodeCount) {
         this._destroyNode(this.nodeList.shift());
       }
-      this.nodeList.push({ assetId, node, billboardEl });
+      this.nodeList.push({
+        assetId,
+        node,
+        billboardEl,
+        audioRefs: audioRefs || null,
+      });
     },
 
     /** 统一销毁一个 nodeList 条目（从场景中移除根节点，清理相关引用） */
@@ -88,6 +94,14 @@ module.exports = function (XR_CONFIG) {
       this.flyingDanmakus = (this.flyingDanmakus || []).filter(
         (d) => d.node !== entry.node,
       );
+      if (entry.audioRefs) {
+        try {
+          entry.audioRefs.ctx.stop();
+        } catch (_) {}
+        try {
+          entry.audioRefs.ctx.destroy();
+        } catch (_) {}
+      }
     },
 
     _placeTextAsset(asset) {
@@ -277,34 +291,54 @@ module.exports = function (XR_CONFIG) {
     },
 
     /**
-     * 在 AR 场景中放置一个 3D 空间音频源（WebAudio HRTF）
+     * 在 AR 场景中放置一个音频源，并用耳机模型标示其空间位置。
      * 字段：file_url（音频 URL），metadata.loop（是否循环，默认 true），
-     *        metadata.volume（音量，默认 1），metadata.refDistance（参考距离，默认 1）
+     *        metadata.volume（音量 0-1，默认 1）
      */
     async _placeAudioAsset(asset) {
       if (!asset.file_url) return;
+      const xr = wx.getXrFrameSystem();
+      const scene = this.scene;
       const camTransform = this.getCamTransform();
-      if (!camTransform) return;
+      if (!scene || !camTransform) return;
 
-      const audioCtx = this._ensureAudioContext();
-      if (!audioCtx) return;
+      const meta = asset.metadata || {};
+      const baseVolume = typeof meta.volume === "number" ? meta.volume : 1.0;
 
-      if (!this.spatialAudioList) this.spatialAudioList = [];
-      const maxAudio = XR_CONFIG.maxAudioCount || 5;
-      if (this.spatialAudioList.length >= maxAudio) {
-        const oldest = this.spatialAudioList.shift();
-        try {
-          oldest.source.stop();
-        } catch (_) {}
-        try {
-          oldest.panner.disconnect();
-        } catch (_) {}
-        try {
-          oldest.gainNode.disconnect();
-        } catch (_) {}
-      }
+      // InnerAudioContext 需要本地路径（远程 URL 缺少 Content-Length 会报 -11828）
+      // 先用 wx.downloadFile 下载到临时文件，再交给 InnerAudioContext 播放
+      const ctx = wx.createInnerAudioContext({ useWebAudioImplement: false });
+      ctx.loop = meta.loop !== false;
+      ctx.volume = baseVolume;
+      ctx.onError((err) => {
+        console.error("[audio] 播放失败:", asset.file_url, err);
+      });
 
-      // 异步加载前记录相机位置，确定音频的 AR 世界坐标
+      // .webm 转码为 .m4a，优先使用兼容性更好的 m4a 版本
+      const audioUrl = asset.file_url.endsWith(".webm")
+        ? asset.file_url.slice(0, -5) + ".m4a"
+        : asset.file_url;
+
+      wx.downloadFile({
+        url: audioUrl,
+        success: (res) => {
+          if (res.statusCode === 200) {
+            ctx.src = res.tempFilePath;
+            ctx.play();
+          } else {
+            console.error(
+              "[audio] 下载失败 statusCode:",
+              res.statusCode,
+              audioUrl,
+            );
+          }
+        },
+        fail: (err) => {
+          console.error("[audio] 下载失败:", audioUrl, err);
+        },
+      });
+
+      // 在相机附近随机放置耳机模型，表示音频源的 AR 空间位置
       const camPos = camTransform.position;
       const angle = Math.random() * Math.PI * 2;
       const radius = 1.5 + Math.random() * 2.0;
@@ -313,106 +347,87 @@ module.exports = function (XR_CONFIG) {
       const srcY = camPos.y;
 
       try {
-        // 拉取音频文件为 ArrayBuffer
-        const arrayBuffer = await new Promise((resolve, reject) => {
-          wx.request({
-            url: asset.file_url,
-            method: "GET",
-            responseType: "arraybuffer",
-            success: (res) => resolve(res.data),
-            fail: reject,
-          });
+        const nodeId = this.nodeIdCounter++;
+        const glbAssetId = `audio-headphone-${nodeId}`;
+        const { value: model } = await scene.assets.loadAsset({
+          type: "gltf",
+          assetId: glbAssetId,
+          src: "/assets/headphone.glb",
         });
 
-        const audioBuffer = await new Promise((resolve, reject) => {
-          audioCtx.decodeAudioData(arrayBuffer, resolve, reject);
+        const rootNode = scene.createElement(xr.XRNode, {
+          id: `audio-node-${nodeId}`,
         });
+        this.shadowRoot.addChild(rootNode);
 
-        const meta = asset.metadata || {};
+        const transform = rootNode.getComponent(xr.Transform);
+        transform.position.x = srcX;
+        transform.position.y = srcY;
+        transform.position.z = srcZ;
 
-        // 音源节点
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.loop = meta.loop !== false; // 默认循环
+        const gltfEl = scene.createElement(xr.XRGLTF);
+        const gltfComp = gltfEl.getComponent(xr.GLTF);
+        gltfComp.setData({ model });
+        rootNode.addChild(gltfEl);
 
-        // 音量节点
-        const gainNode = audioCtx.createGain();
-        gainNode.gain.value =
-          typeof meta.volume === "number" ? meta.volume : 1.0;
+        // normalize 最长边到 0.3m
+        const boundBox = gltfComp.calcTotalBoundBox();
+        const size = boundBox.size;
+        const maxExtent = Math.max(size.x, size.y, size.z);
+        const s = maxExtent > 0.0001 ? 0.3 / maxExtent : 0.3;
+        transform.scale.setValue(s, s, s);
 
-        // 3D 空间定位节点（HRTF）
-        const panner = audioCtx.createPanner();
-        panner.panningModel = "HRTF";
-        panner.distanceModel = "inverse";
-        panner.refDistance =
-          typeof meta.refDistance === "number" ? meta.refDistance : 1;
-        panner.maxDistance = XR_CONFIG.maxDistanceMeters || 20;
-        panner.rolloffFactor = 1;
-        if (typeof panner.setPosition === "function") {
-          panner.setPosition(srcX, srcY, srcZ);
-        }
-
-        // 连接音频图：source -> gainNode -> panner -> destination
-        source.connect(gainNode);
-        gainNode.connect(panner);
-        panner.connect(audioCtx.destination);
-        source.start();
-
-        this.spatialAudioList.push({ source, gainNode, panner });
+        // audioRefs.ctx 在 _destroyNode 中自动 stop()+destroy()
+        this._registerNode(asset.id, rootNode, null, { ctx, baseVolume });
       } catch (e) {
-        console.error("[audio] 加载音频失败:", asset.file_url, e);
+        console.error("[audio] 加载耳机模型失败:", e);
+        // 回退：用小立方体占位，音频仍正常播放
+        const nodeId = this.nodeIdCounter++;
+        const rootNode = scene.createElement(xr.XRNode, {
+          id: `audio-node-${nodeId}`,
+        });
+        this.shadowRoot.addChild(rootNode);
+        const transform = rootNode.getComponent(xr.Transform);
+        transform.position.x = srcX;
+        transform.position.y = srcY;
+        transform.position.z = srcZ;
+        transform.scale.setValue(0.15, 0.15, 0.15);
+        const cubeEl = scene.createElement(xr.XRMesh, {
+          geometry: "cube",
+          material: "standard-mat",
+          uniforms: "u_baseColorFactor: 0.2 0.5 1.0 1.0",
+        });
+        rootNode.addChild(cubeEl);
+        this._registerNode(asset.id, rootNode, null, { ctx, baseVolume });
       }
-    },
-
-    /** 懒初始化 WebAudio 上下文 */
-    _ensureAudioContext() {
-      if (!this._audioCtx) {
-        try {
-          this._audioCtx = wx.createWebAudioContext();
-        } catch (e) {
-          console.error("[audio] 无法创建 WebAudio 上下文:", e);
-          return null;
-        }
-      }
-      return this._audioCtx;
     },
 
     /**
-     * 每帧更新 WebAudio 监听器的位置与朝向，使 3D 音频随相机变化
-     * 需在 handleTick 中调用
+     * 每帧根据音源节点与相机的距离动态调整音量。
+     * 在 refDist 以内保持 baseVolume，超过后线性衰减至 maxDistanceMeters 处为 0。
+     * 需在 handleTick 中调用。
      */
-    tickSpatialAudio() {
-      if (
-        !this._audioCtx ||
-        !this.spatialAudioList ||
-        !this.spatialAudioList.length
-      )
-        return;
-
+    tickAudioVolume() {
       const camTransform = this.getCamTransform();
       if (!camTransform) return;
-
-      const pos = camTransform.worldPosition;
-      const fwd = camTransform.worldForward;
-      const up = camTransform.worldUp;
-
-      const listener = this._audioCtx.listener;
-      if (typeof listener.setPosition === "function") {
-        // 旧版 WebAudio API（微信小程序目前支持的形式）
-        listener.setPosition(pos.x, pos.y, pos.z);
-        listener.setOrientation(fwd.x, fwd.y, fwd.z, up.x, up.y, up.z);
-      } else {
-        // 新版 AudioParam API
-        const t = this._audioCtx.currentTime;
-        listener.positionX && listener.positionX.setValueAtTime(pos.x, t);
-        listener.positionY && listener.positionY.setValueAtTime(pos.y, t);
-        listener.positionZ && listener.positionZ.setValueAtTime(pos.z, t);
-        listener.forwardX && listener.forwardX.setValueAtTime(fwd.x, t);
-        listener.forwardY && listener.forwardY.setValueAtTime(fwd.y, t);
-        listener.forwardZ && listener.forwardZ.setValueAtTime(fwd.z, t);
-        listener.upX && listener.upX.setValueAtTime(up.x, t);
-        listener.upY && listener.upY.setValueAtTime(up.y, t);
-        listener.upZ && listener.upZ.setValueAtTime(up.z, t);
+      const camPos = camTransform.worldPosition;
+      const maxDist = XR_CONFIG.maxDistanceMeters || 20;
+      const refDist = 1.5;
+      const xr = wx.getXrFrameSystem();
+      for (const entry of this.nodeList) {
+        if (!entry.audioRefs) continue;
+        const { ctx, baseVolume } = entry.audioRefs;
+        const trs = entry.node.getComponent(xr.Transform);
+        if (!trs) continue;
+        const p = trs.worldPosition;
+        const dist = Math.sqrt(
+          (p.x - camPos.x) ** 2 + (p.y - camPos.y) ** 2 + (p.z - camPos.z) ** 2,
+        );
+        const t = Math.max(
+          0,
+          Math.min(1, (maxDist - dist) / (maxDist - refDist)),
+        );
+        ctx.volume = baseVolume * t;
       }
     },
   };

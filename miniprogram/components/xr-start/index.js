@@ -159,7 +159,7 @@ Component({
 
       this.tickFlyingDanmakus();
       this.tickRepulsion();
-      this.tickSpatialAudio();
+      this.tickAudioVolume();
 
       for (const entry of this.nodeList) {
         const el = entry.billboardEl;
