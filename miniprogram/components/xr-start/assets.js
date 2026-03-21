@@ -378,7 +378,14 @@ module.exports = function (XR_CONFIG) {
         transform.scale.setValue(s, s, s);
 
         // audioRefs.ctx 在 _destroyNode 中自动 stop()+destroy()
-        this._registerNode(asset.id, rootNode, null, { ctx, baseVolume });
+        // 直接存储世界坐标，避免依赖 worldPosition（多节点时可能不稳定）
+        this._registerNode(asset.id, rootNode, null, {
+          ctx,
+          baseVolume,
+          srcX,
+          srcY,
+          srcZ,
+        });
       } catch (e) {
         console.error("[audio] 加载耳机模型失败:", e);
         // 回退：用小立方体占位，音频仍正常播放
@@ -398,7 +405,13 @@ module.exports = function (XR_CONFIG) {
           uniforms: "u_baseColorFactor: 0.2 0.5 1.0 1.0",
         });
         rootNode.addChild(cubeEl);
-        this._registerNode(asset.id, rootNode, null, { ctx, baseVolume });
+        this._registerNode(asset.id, rootNode, null, {
+          ctx,
+          baseVolume,
+          srcX,
+          srcY,
+          srcZ,
+        });
       }
     },
 
@@ -411,23 +424,30 @@ module.exports = function (XR_CONFIG) {
       const camTransform = this.getCamTransform();
       if (!camTransform) return;
       const camPos = camTransform.worldPosition;
-      const maxDist = XR_CONFIG.maxDistanceMeters || 20;
-      const refDist = 1.5;
-      const xr = wx.getXrFrameSystem();
+      // refDist 以内满音量，之后按 (refDist/dist)² 平方反比衰减
+      // 1m→1.0  2m→0.25  3m→0.11  5m→0.04
+      const refDist = 1.0;
+      const cutoffDist = XR_CONFIG.maxDistanceMeters || 20;
+      this._audioDbgTick = (this._audioDbgTick || 0) + 1;
+      const log = this._audioDbgTick % 60 === 0;
       for (const entry of this.nodeList) {
         if (!entry.audioRefs) continue;
-        const { ctx, baseVolume } = entry.audioRefs;
-        const trs = entry.node.getComponent(xr.Transform);
-        if (!trs) continue;
-        const p = trs.worldPosition;
+        const { ctx, baseVolume, srcX, srcY, srcZ } = entry.audioRefs;
         const dist = Math.sqrt(
-          (p.x - camPos.x) ** 2 + (p.y - camPos.y) ** 2 + (p.z - camPos.z) ** 2,
+          (srcX - camPos.x) ** 2 +
+            (srcY - camPos.y) ** 2 +
+            (srcZ - camPos.z) ** 2,
         );
-        const t = Math.max(
-          0,
-          Math.min(1, (maxDist - dist) / (maxDist - refDist)),
-        );
-        ctx.volume = baseVolume * t;
+        // 平方反比衰减，超过 cutoffDist 强制为 0
+        const r = Math.max(dist, refDist);
+        const t = dist >= cutoffDist ? 0 : (refDist * refDist) / (r * r);
+        const newVol = baseVolume * t;
+        ctx.volume = newVol;
+        if (log) {
+          console.log(
+            `[audio] dist=${dist.toFixed(2)}m  t=${t.toFixed(3)}  baseVol=${baseVolume}  setVol=${newVol.toFixed(3)}  ctx.volume=${ctx.volume}`,
+          );
+        }
       }
     },
   };
