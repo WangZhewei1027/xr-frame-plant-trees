@@ -34,31 +34,54 @@ module.exports = function (XR_CONFIG) {
       }
     },
 
-    /**
-     * 将新拉取的 assets 与已显示的 nodeList 做 diff 对比：
-     *  - 保留 ID 仍在新列表中的节点（不重建）
-     *  - 销毁 ID 不在新列表中的旧节点
-     *  - 按 maxNodeCount 上限补充新节点
-     */
-    displayAssets(assets) {
-      const newIds = new Set(assets.map((a) => a.id));
+    // /**
+    //  * 将新拉取的 assets 与已显示的 nodeList 做 diff 对比：
+    //  *  - 保留 ID 仍在新列表中的节点（不重建）
+    //  *  - 销毁 ID 不在新列表中的旧节点
+    //  *  - 按 maxNodeCount 上限补充新节点
+    //  */
+    // displayAssets(assets) {
+    //   const newIds = new Set(assets.map((a) => a.id));
+    //
+    //   // 移除已失效的节点；assetId === null 为弹幕节点，保留不参与 diff
+    //   const kept = [];
+    //   for (const entry of this.nodeList) {
+    //     if (entry.assetId === null || newIds.has(entry.assetId)) {
+    //       kept.push(entry);
+    //     } else {
+    //       this._destroyNode(entry);
+    //     }
+    //   }
+    //   this.nodeList = kept;
+    //
+    //   // 过滤出尚未显示的新 asset，并按剩余名额进行放置
+    //   const existingIds = new Set(kept.map((e) => e.assetId));
+    //   const toAdd = assets.filter((a) => !existingIds.has(a.id));
+    //   const slots = XR_CONFIG.maxNodeCount - kept.length;
+    //   toAdd.slice(0, Math.max(0, slots)).forEach((a) => this._placeAsset(a));
+    // },
 
-      // 移除已失效的节点；assetId === null 为弹幕节点，保留不参与 diff
+    /** 每次拉取后全量放置，重复 ID 删旧留新，超出 maxNodeCount 时驱逐最旧节点 */
+    displayAssets(assets) {
+      // 先移除与本次拉取重复的旧节点（按 assetId 去重，弹幕节点 assetId===null 不参与）
+      const incomingIds = new Set(assets.map((a) => a.id));
       const kept = [];
       for (const entry of this.nodeList) {
-        if (entry.assetId === null || newIds.has(entry.assetId)) {
-          kept.push(entry);
-        } else {
+        if (entry.assetId !== null && incomingIds.has(entry.assetId)) {
           this._destroyNode(entry);
+        } else {
+          kept.push(entry);
         }
       }
       this.nodeList = kept;
 
-      // 过滤出尚未显示的新 asset，并按剩余名额进行放置
-      const existingIds = new Set(kept.map((e) => e.assetId));
-      const toAdd = assets.filter((a) => !existingIds.has(a.id));
-      const slots = XR_CONFIG.maxNodeCount - kept.length;
-      toAdd.slice(0, Math.max(0, slots)).forEach((a) => this._placeAsset(a));
+      // 超出上限时，从头部驱逐最旧节点
+      while (this.nodeList.length + assets.length > XR_CONFIG.maxNodeCount) {
+        const oldest = this.nodeList.shift();
+        if (oldest) this._destroyNode(oldest);
+        else break;
+      }
+      assets.forEach((a) => this._placeAsset(a));
     },
 
     /** 按 file_type 分发到对应的放置方法 */

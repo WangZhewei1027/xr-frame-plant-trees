@@ -6,7 +6,7 @@ const navigation = require("./navigation");
 
 const XR_CONFIG = {
   maxDistanceMeters: 50,
-  maxNodeCount: 20,
+  maxNodeCount: 25,
   distanceThreshold: 5,
   treeModelUrl: "https://8thwall.8thwall.app/assets/tree-d51u9146bh.glb",
 };
