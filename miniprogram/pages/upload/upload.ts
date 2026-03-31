@@ -1,4 +1,4 @@
-import { CONFIG, supabaseRpc } from "../../utils/supabase";
+import { CONFIG, supabaseRpc, setConfig } from "../../utils/supabase";
 
 interface LocationData {
   latitude: number;

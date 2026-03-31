@@ -1,4 +1,4 @@
-import { CONFIG, supabaseRpc } from "../../utils/supabase";
+import { CONFIG, supabaseRpc, setConfig } from "../../utils/supabase";
 
 interface LocationData {
   latitude: number;
@@ -82,7 +82,11 @@ Page({
     navRelAngle: 0, // 目标相对设备朝向的角度[-180,180]，用于 UI 箭头旋转
   },
 
-  onLoad() {
+  onLoad(options: Record<string, string | undefined>) {
+    setConfig({
+      organizationId: options.organizationId,
+      workspaceId: options.workspaceId,
+    });
     const {
       windowWidth: width,
       windowHeight: height,

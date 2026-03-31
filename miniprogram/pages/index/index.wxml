@@ -1,8 +1,8 @@
 <view class="container">
   <view class="header">
     <view class="logo-mark"></view>
-    <text class="title">灵岩元宇宙</text>
-    <text class="subtitle">虚实相生 · 灵境无界</text>
+    <text class="title" wx:if="{{loaded}}">{{title || '无组织名'}}</text>
+    <text class="subtitle" wx:if="{{loaded && subtitle}}">{{subtitle}}</text>
   </view>
 
   <view class="menu">
