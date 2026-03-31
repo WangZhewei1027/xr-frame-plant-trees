@@ -2,7 +2,15 @@ const SUPABASE_URL = "https://mkdfezaufjhrfjkfqlbj.supabase.co";
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rZGZlemF1ZmpocmZqa2ZxbGJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUyMDI2NzksImV4cCI6MjA4MDc3ODY3OX0.YvoVQP5k61rl1dbm-y7O-MQCsfke3rnSIzhWvbVGQdU";
 
-export const CONFIG: { organizationId?: string; workspaceId?: string } = {};
+/** 兜底默认值 */
+const DEFAULT_CONFIG = {
+  organizationId: "41d8feec-b541-46ba-bfb0-30cb63f71170", // 东明
+  workspaceId: "388bc7ed-068e-4e20-8e66-53aa1e952b98", // 东明/test
+};
+
+export const CONFIG: { organizationId?: string; workspaceId?: string } = {
+  ...DEFAULT_CONFIG,
+};
 
 /** 从页面 query 参数更新 CONFIG */
 export function setConfig(params: {
