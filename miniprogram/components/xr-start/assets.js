@@ -20,10 +20,11 @@ module.exports = function (XR_CONFIG) {
           this.displayAssets(
             data.filter(
               (a) =>
-                a.file_type === "text" ||
-                a.file_type === "model" ||
-                a.file_type === "image" ||
-                a.file_type === "audio",
+                (a.file_type === "text" ||
+                  a.file_type === "model" ||
+                  a.file_type === "image" ||
+                  a.file_type === "audio") &&
+                !a.is_huge,
             ),
           );
         }

@@ -3,6 +3,7 @@ const createAssetsMethods = require("./assets");
 const createDanmakuMethods = require("./danmaku");
 const particle = require("./particle");
 const navigation = require("./navigation");
+const createHugeMethods = require("./huge");
 
 const XR_CONFIG = {
   maxDistanceMeters: 50,
@@ -13,6 +14,7 @@ const XR_CONFIG = {
 
 const assetsMethods = createAssetsMethods(XR_CONFIG);
 const danmakuMethods = createDanmakuMethods(XR_CONFIG);
+const hugeMethods = createHugeMethods(XR_CONFIG);
 
 Component({
   behaviors: [require("../common/share-behavior").default],
@@ -42,6 +44,10 @@ Component({
         _navLabelNode: null,
         _navLabelTextEl: null,
         _lastNavLabel: "",
+        // 巨型远景模型
+        _hugeNodeList: [],
+        _pendingHugeAssets: [],
+        _isFetchingHuge: false,
       });
       this.startGPSWatch();
     },
@@ -61,6 +67,14 @@ Component({
         } catch (_) {}
       }
       this.nodeList = [];
+      // 清理巨型远景模型
+      for (const entry of this._hugeNodeList || []) {
+        try {
+          this.shadowRoot?.removeChild(entry.node);
+        } catch (_) {}
+      }
+      this._hugeNodeList = [];
+      this._pendingHugeAssets = [];
       if (this.spatialAudioList) {
         for (const entry of this.spatialAudioList) {
           try {
@@ -99,6 +113,9 @@ Component({
 
     // ─── 导航粒子系统 ─────────────────────────────────
     ...navigation,
+
+    // ─── 巨型远景模型 ─────────────────────────────────
+    ...hugeMethods,
 
     // ─── 场景节点管理 ───────────────────────────────
     getCamTransform() {
@@ -160,6 +177,7 @@ Component({
       this.tickFlyingDanmakus();
       this.tickRepulsion();
       this.tickAudioVolume();
+      this.tickHugeModels();
 
       for (const entry of this.nodeList) {
         const el = entry.billboardEl;

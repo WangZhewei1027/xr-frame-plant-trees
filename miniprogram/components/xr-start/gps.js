@@ -7,6 +7,7 @@ module.exports = {
     if (isFirst && !this.firstFetchDone) {
       this.firstFetchDone = true;
       this.fetchNearbyAssets();
+      this.fetchHugeAssets();
     }
   },
 
