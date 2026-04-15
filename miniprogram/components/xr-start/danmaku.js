@@ -1,6 +1,90 @@
-/** 弹幕飞行动画：从相机后下方飞到正前方 */
+/** 弹幕飞行动画：从相机后下方飞到正前方，微信聊天气泡样式 */
 module.exports = function (XR_CONFIG) {
   return {
+    /**
+     * 在 rootNode 下创建微信气泡子节点（背景 + 箭头 + 头像 + 文字）。
+     * 供 showDanmakuInXR 和 _placeTextAsset 共用。
+     * @returns {Element} textEl 文字节点
+     */
+    _buildBubbleNodes(rootNode, text) {
+      const xr = wx.getXrFrameSystem();
+      const scene = this.scene;
+
+      // ── 随机选择微信气泡样式（绿色=发送 / 白色=接收） ──
+      const isGreen = Math.random() > 0.5;
+      const dir = isGreen ? 1 : -1; // +1 头像在右, -1 头像在左
+      const bubbleColor = isGreen
+        ? "0.58 0.93 0.41 1.0" // 微信绿 #95EC69
+        : "1.0 1.0 1.0 1.0";
+      const textColor = isGreen ? "1.0 1.0 1.0 1" : "0.1 0.1 0.1 1";
+      const avatarColor = "0.78 0.78 0.78 1.0";
+
+      // ── 根据文字长度动态计算气泡尺寸（整体缩小一半） ──
+      const charW = 1.1;
+      const padH = 1.25;
+      const bw = Math.max(text.length * charW + padH * 2, 4);
+      const bh = 2;
+      const avatarSize = 1.75;
+      const arrowSize = 0.9;
+
+      // ── 气泡背景（薄 cube）── billboard 后 +Z 朝向相机，背景放 -Z
+      const bgMesh = scene.createElement(xr.XRMesh, {
+        geometry: "cube",
+        uniforms: `u_baseColorFactor:${bubbleColor}`,
+        position: "0 0 -0.15",
+        scale: `${bw} ${bh} 0.01`,
+      });
+      rootNode.addChild(bgMesh);
+
+      // ── 箭头（旋转 45° 的薄 cube，一半被气泡遮住形成三角） ──
+      const arrowMesh = scene.createElement(xr.XRMesh, {
+        geometry: "cube",
+        uniforms: `u_baseColorFactor:${bubbleColor}`,
+        position: `${dir * (bw / 2)} 0 -0.1`,
+        rotation: "0 0 45",
+        scale: `${arrowSize} ${arrowSize} 0.01`,
+      });
+      rootNode.addChild(arrowMesh);
+
+      // ── 头像（从 profile 文件夹随机选图，无图时用灰色占位） ──
+      const avatarX = dir * (bw / 2 + arrowSize * 0.5 + avatarSize / 2 + 0.15);
+      const profiles = this._profileAssetIds || [];
+      if (profiles.length > 0) {
+        const texId = profiles[Math.floor(Math.random() * profiles.length)];
+        const avatarMesh = scene.createElement(xr.XRMesh, {
+          geometry: "plane",
+          material: "standard-mat",
+          uniforms: `u_baseColorMap: ${texId}`,
+          position: `${avatarX} 0 -0.15`,
+          rotation: "90 0 0",
+          scale: `${avatarSize} 1 ${avatarSize}`,
+          states: "cullOn: false",
+        });
+        rootNode.addChild(avatarMesh);
+      } else {
+        const avatarMesh = scene.createElement(xr.XRMesh, {
+          geometry: "cube",
+          uniforms: `u_baseColorFactor:${avatarColor}`,
+          position: `${avatarX} 0 -0.15`,
+          scale: `${avatarSize} ${avatarSize} 0.01`,
+        });
+        rootNode.addChild(avatarMesh);
+      }
+
+      // ── 文字（+Z 方向最靠近相机） ──
+      const textEl = scene.createElement(xr.XRText, {
+        position: "0 0 0",
+        value: text,
+        size: "1.25",
+        anchor: "0.5 0.5",
+        "never-cull": "",
+        uniforms: `u_baseColorFactor:${textColor}`,
+      });
+      rootNode.addChild(textEl);
+
+      return textEl;
+    },
+
     showDanmakuInXR(text) {
       const xr = wx.getXrFrameSystem();
       const scene = this.scene;
@@ -36,17 +120,11 @@ module.exports = function (XR_CONFIG) {
       });
       this.shadowRoot.addChild(rootNode);
 
-      const textEl = scene.createElement(xr.XRText, {
-        position: "0 0 0",
-        value: text,
-        size: "2.5",
-        anchor: "0.5 0.5",
-        "never-cull": "",
-        uniforms: "u_baseColorFactor:1.0 1.0 1.0 1",
-      });
-      rootNode.addChild(textEl);
+      const textEl = this._buildBubbleNodes(rootNode, text);
+
+      // billboard 目标 = rootNode，让整个气泡结构朝向相机
       // assetId = null 表示弹幕节点，不参与远程素材的 diff 对比
-      this._registerNode(null, rootNode, textEl);
+      this._registerNode(null, rootNode, rootNode);
 
       this.flyingDanmakus.push({
         node: rootNode,

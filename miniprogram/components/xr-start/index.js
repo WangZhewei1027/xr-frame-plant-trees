@@ -146,6 +146,23 @@ Component({
       });
       this.gltfModel = model;
 
+      // 预加载头像纹理（profile 文件夹下所有图片）
+      const profileImages = ["profile_default.jpg"];
+      this._profileAssetIds = [];
+      for (let i = 0; i < profileImages.length; i++) {
+        const aid = `profile-tex-${i}`;
+        try {
+          await xrScene.assets.loadAsset({
+            type: "texture",
+            assetId: aid,
+            src: `/assets/profile/${profileImages[i]}`,
+          });
+          this._profileAssetIds.push(aid);
+        } catch (e) {
+          console.warn("[profile] 加载头像失败:", profileImages[i], e);
+        }
+      }
+
       // 若导航目标在场景就绪前已设置，延迟创建导航系统
       if (this._navTarget) {
         this._createNavSystem(this._navTarget);

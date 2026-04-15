@@ -148,15 +148,9 @@ module.exports = function (XR_CONFIG) {
       });
       this.shadowRoot.addChild(rootNode);
 
-      const text = scene.createElement(xr.XRText, {
-        position: "0 0 0",
-        value: asset.text_content || "无内容",
-        size: "2",
-        anchor: "0.5 0.5",
-        "never-cull": "",
-      });
-      rootNode.addChild(text);
-      this._registerNode(asset.id, rootNode, text);
+      this._buildBubbleNodes(rootNode, asset.text_content || "无内容");
+      // billboard 目标 = rootNode，让整个气泡结构朝向相机
+      this._registerNode(asset.id, rootNode, rootNode);
     },
 
     async _placeModelAsset(asset) {
