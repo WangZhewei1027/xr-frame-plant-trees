@@ -1,0 +1,64 @@
+<!-- 导航方向覆层 -->
+<view class="nav-overlay" wx:if="{{isNavigating}}">
+  <view class="nav-compass-ring">
+    <view class="nav-arrow-wrap" style="transform: rotate({{navRelAngle}}deg)">
+      <view class="nav-arrow-head"></view>
+      <view class="nav-arrow-tail"></view>
+    </view>
+  </view>
+  <view class="nav-info-row">
+    <text class="nav-shop-name">{{navShopName}}</text>
+    <text class="nav-dist">{{navDistance}}</text>
+  </view>
+</view>
+
+<!-- 打卡成功弹窗 -->
+<view class="checkin-mask" wx:if="{{showCheckinModal}}" bindtap="closeCheckinModal">
+  <view class="checkin-modal" catchtap="">
+    <text class="checkin-modal-title">{{checkinShopName}} 打卡成功</text>
+    <image class="checkin-modal-img" src="{{checkinImageUrl}}" mode="aspectFit" />
+    <view class="checkin-modal-actions">
+      <view class="checkin-save-btn" bindtap="saveCheckinImage">保存到相册</view>
+      <view class="checkin-close-btn" bindtap="closeCheckinModal">关闭</view>
+    </view>
+  </view>
+</view>
+
+<!-- 店铺卡片列表 -->
+<view class="shop-swiper-wrap" wx:if="{{visible}}">
+  <block wx:if="{{shopsLoading}}">
+    <view class="shop-loading">加载中…</view>
+  </block>
+  <block wx:elif="{{shops.length === 0}}">
+    <view class="shop-loading">暂无店铺</view>
+  </block>
+  <swiper
+    wx:else
+    class="shop-swiper"
+    previous-margin="60rpx"
+    next-margin="60rpx"
+    current="{{selectedShopIdx}}"
+    bindchange="onSwiperChange"
+  >
+    <swiper-item wx:for="{{shops}}" wx:key="id">
+      <view class="shop-card {{selectedShopIdx === index ? 'selected' : ''}}">
+        <image class="shop-card-img" src="{{item.file_url}}" mode="aspectFill" />
+        <view class="shop-card-right">
+          <text class="shop-card-name">{{item.name}}</text>
+          <text class="shop-card-desc">{{item.text_content}}</text>
+          <view class="shop-card-bottom">
+            <text class="shop-card-dist" wx:if="{{item.distance !== undefined}}">📍 {{item.distance}}m</text>
+            <text class="shop-card-dist" wx:else>📍 定位中…</text>
+            <view
+              class="shop-checkin-btn {{checkedInShopIds[item.id] ? 'checked-in' : (item.canCheckin ? 'active' : 'disabled')}}"
+              bindtap="onCheckin"
+              data-idx="{{index}}"
+            >
+              {{checkedInShopIds[item.id] ? '已打卡' : (item.canCheckin ? '打卡' : '太远了')}}
+            </view>
+          </view>
+        </view>
+      </view>
+    </swiper-item>
+  </swiper>
+</view>

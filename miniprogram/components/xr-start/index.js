@@ -147,7 +147,7 @@ Component({
       this.gltfModel = model;
 
       // 预加载头像纹理（profile 文件夹下所有图片）
-      const profileImages = ["profile_default.jpg"];
+      const profileImages = ["profile_default.jpg", "profile_1.jpeg"];
       this._profileAssetIds = [];
       for (let i = 0; i < profileImages.length; i++) {
         const aid = `profile-tex-${i}`;

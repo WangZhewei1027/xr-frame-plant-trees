@@ -1,6 +1,7 @@
 {
     "usingComponents": {
-        "xr-start": "../../components/xr-start/index"
+        "xr-start": "../../components/xr-start/index",
+        "shop-checkin": "../../components/shop-checkin/index"
     },
     "disableScroll": true
 }
