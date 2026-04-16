@@ -57,6 +57,8 @@ Component({
     navShopName: "",
     navDistance: "",
     navRelAngle: 0,
+    // 打卡进度
+    checkedInCount: 0,
   },
 
   lifetimes: {
@@ -94,6 +96,16 @@ Component({
     /** compassHeading 变化时刷新导航 UI */
     compassHeading() {
       this._refreshNavUI();
+    },
+    /** 打卡记录或店铺列表变化时更新计数 */
+    "checkedInShopIds, shops"() {
+      const ids = this.data.checkedInShopIds || {};
+      const shops = this.data.shops || [];
+      let count = 0;
+      for (let i = 0; i < shops.length; i++) {
+        if (ids[shops[i].id]) count++;
+      }
+      this.setData({ checkedInCount: count });
     },
   },
 

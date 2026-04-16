@@ -26,6 +26,9 @@
 
 <!-- 店铺卡片列表 -->
 <view class="shop-swiper-wrap" wx:if="{{visible}}">
+  <view class="shop-progress" wx:if="{{shops.length > 0}}">
+    <text class="shop-progress-text">{{checkedInCount}}/{{shops.length}} 已打卡</text>
+  </view>
   <block wx:if="{{shopsLoading}}">
     <view class="shop-loading">加载中…</view>
   </block>
