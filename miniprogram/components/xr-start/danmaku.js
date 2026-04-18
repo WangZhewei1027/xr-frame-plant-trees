@@ -12,8 +12,6 @@ module.exports = function (XR_CONFIG) {
 
       // ── 紫色半透明气泡 + 发亮边框 ──
       const dir = Math.random() > 0.5 ? 1 : -1;
-      const bubbleColor = "0.596 0.145 0.596 0.55"; // #982598 半透明
-      const borderColor = "0.85 0.5 1.0 0.9"; // 亮紫发光边框
       const textColor = "0.945 0.914 0.914 1"; // #F1E9E9
       const avatarColor = "0.78 0.78 0.78 1.0";
 
@@ -23,27 +21,34 @@ module.exports = function (XR_CONFIG) {
       const bw = Math.max(text.length * charW + padH * 2, 4);
       const bh = 2;
       const avatarSize = 1.75;
-      const borderW = 0.1; // 边框粗细
 
-      // ── 发光边框（比气泡稍大，放在更后面 -Z） ──
-      const glowBorder = scene.createElement(xr.XRMesh, {
-        geometry: "cube",
-        uniforms: `u_baseColorFactor:${borderColor}`,
-        position: "0 0 -0.18",
-        scale: `${bw + borderW * 2} ${bh + borderW * 2} 0.01`,
-        states: "alphaMode:BLEND, renderQueue:2490",
-      });
-      rootNode.addChild(glowBorder);
+      // ── 气泡背景（圆角矩形 PNG 纹理） ──
+      const ratio = Math.max(2, Math.min(8, Math.round(bw / bh)));
+      const bubbleTexIds = this._bubbleTexIds || {};
+      const bubbleTexId = bubbleTexIds[ratio];
 
-      // ── 气泡背景（薄 cube + alphaMode:BLEND 半透明） ──
-      const bgMesh = scene.createElement(xr.XRMesh, {
-        geometry: "cube",
-        uniforms: `u_baseColorFactor:${bubbleColor}`,
-        position: "0 0 -0.15",
-        scale: `${bw} ${bh} 0.01`,
-        states: "alphaMode:BLEND, renderQueue:2500",
-      });
-      rootNode.addChild(bgMesh);
+      if (bubbleTexId) {
+        const bgMesh = scene.createElement(xr.XRMesh, {
+          geometry: "plane",
+          material: "standard-mat",
+          uniforms: `u_baseColorMap: ${bubbleTexId}`,
+          position: "0 0 -0.15",
+          rotation: "90 0 0",
+          scale: `${bw} 1 ${bh}`,
+          states: "cullOn: false, alphaMode:BLEND, renderQueue:2500",
+        });
+        rootNode.addChild(bgMesh);
+      } else {
+        // fallback: 无纹理时用 cube
+        const bgMesh = scene.createElement(xr.XRMesh, {
+          geometry: "cube",
+          uniforms: "u_baseColorFactor:0.596 0.145 0.596 0.55",
+          position: "0 0 -0.15",
+          scale: `${bw} ${bh} 0.01`,
+          states: "alphaMode:BLEND, renderQueue:2500",
+        });
+        rootNode.addChild(bgMesh);
+      }
 
       // ── 头像（从 profile 文件夹随机选图，无图时用灰色占位） ──
       const avatarX = dir * (bw / 2 + avatarSize / 2 + 0.3);

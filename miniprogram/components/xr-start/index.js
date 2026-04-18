@@ -170,6 +170,22 @@ Component({
         }
       }
 
+      // 预加载圆角气泡纹理（bubble 文件夹，不同宽高比）
+      this._bubbleTexIds = {};
+      for (let ratio = 2; ratio <= 8; ratio++) {
+        const aid = `bubble-tex-${ratio}`;
+        try {
+          await xrScene.assets.loadAsset({
+            type: "texture",
+            assetId: aid,
+            src: `/assets/bubble/bubble_${ratio}x1.png`,
+          });
+          this._bubbleTexIds[ratio] = aid;
+        } catch (e) {
+          console.warn("[bubble] 加载气泡纹理失败:", ratio, e);
+        }
+      }
+
       // 若导航目标在场景就绪前已设置，延迟创建导航系统
       if (this._navTarget) {
         this._createNavSystem(this._navTarget);
