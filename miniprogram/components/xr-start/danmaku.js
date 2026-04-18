@@ -10,13 +10,11 @@ module.exports = function (XR_CONFIG) {
       const xr = wx.getXrFrameSystem();
       const scene = this.scene;
 
-      // ── 随机选择微信气泡样式（绿色=发送 / 白色=接收） ──
-      const isGreen = Math.random() > 0.5;
-      const dir = isGreen ? 1 : -1; // +1 头像在右, -1 头像在左
-      const bubbleColor = isGreen
-        ? "0.58 0.93 0.41 1.0" // 微信绿 #95EC69
-        : "1.0 1.0 1.0 1.0";
-      const textColor = isGreen ? "1.0 1.0 1.0 1" : "0.1 0.1 0.1 1";
+      // ── 紫色半透明气泡 + 发亮边框 ──
+      const dir = Math.random() > 0.5 ? 1 : -1;
+      const bubbleColor = "0.596 0.145 0.596 0.55"; // #982598 半透明
+      const borderColor = "0.85 0.5 1.0 0.9"; // 亮紫发光边框
+      const textColor = "0.945 0.914 0.914 1"; // #F1E9E9
       const avatarColor = "0.78 0.78 0.78 1.0";
 
       // ── 根据文字长度动态计算气泡尺寸（整体缩小一半） ──
@@ -25,29 +23,30 @@ module.exports = function (XR_CONFIG) {
       const bw = Math.max(text.length * charW + padH * 2, 4);
       const bh = 2;
       const avatarSize = 1.75;
-      const arrowSize = 0.9;
+      const borderW = 0.1; // 边框粗细
 
-      // ── 气泡背景（薄 cube）── billboard 后 +Z 朝向相机，背景放 -Z
+      // ── 发光边框（比气泡稍大，放在更后面 -Z） ──
+      const glowBorder = scene.createElement(xr.XRMesh, {
+        geometry: "cube",
+        uniforms: `u_baseColorFactor:${borderColor}`,
+        position: "0 0 -0.18",
+        scale: `${bw + borderW * 2} ${bh + borderW * 2} 0.01`,
+        states: "alphaMode:BLEND, renderQueue:2490",
+      });
+      rootNode.addChild(glowBorder);
+
+      // ── 气泡背景（薄 cube + alphaMode:BLEND 半透明） ──
       const bgMesh = scene.createElement(xr.XRMesh, {
         geometry: "cube",
         uniforms: `u_baseColorFactor:${bubbleColor}`,
         position: "0 0 -0.15",
         scale: `${bw} ${bh} 0.01`,
+        states: "alphaMode:BLEND, renderQueue:2500",
       });
       rootNode.addChild(bgMesh);
 
-      // ── 箭头（旋转 45° 的薄 cube，一半被气泡遮住形成三角） ──
-      const arrowMesh = scene.createElement(xr.XRMesh, {
-        geometry: "cube",
-        uniforms: `u_baseColorFactor:${bubbleColor}`,
-        position: `${dir * (bw / 2)} 0 -0.1`,
-        rotation: "0 0 45",
-        scale: `${arrowSize} ${arrowSize} 0.01`,
-      });
-      rootNode.addChild(arrowMesh);
-
       // ── 头像（从 profile 文件夹随机选图，无图时用灰色占位） ──
-      const avatarX = dir * (bw / 2 + arrowSize * 0.5 + avatarSize / 2 + 0.15);
+      const avatarX = dir * (bw / 2 + avatarSize / 2 + 0.3);
       const profiles = this._profileAssetIds || [];
       if (profiles.length > 0) {
         const texId = profiles[Math.floor(Math.random() * profiles.length)];
@@ -58,7 +57,7 @@ module.exports = function (XR_CONFIG) {
           position: `${avatarX} 0 -0.15`,
           rotation: "90 0 0",
           scale: `${avatarSize} 1 ${avatarSize}`,
-          states: "cullOn: false",
+          states: "cullOn: false, alphaMode:BLEND, renderQueue:2510",
         });
         rootNode.addChild(avatarMesh);
       } else {

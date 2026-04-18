@@ -148,12 +148,12 @@ Component({
 
       // 预加载头像纹理（profile 文件夹下所有图片）
       const profileImages = [
-        "profile_1.jpeg",
-        "profile_2.jpeg",
-        "profile_3.jpeg",
-        "profile_4.jpeg",
-        "profile_5.jpeg",
-        "profile_6.jpeg",
+        "profile_1_circle.png",
+        "profile_2_circle.png",
+        "profile_3_circle.png",
+        "profile_4_circle.png",
+        "profile_5_circle.png",
+        "profile_6_circle.png",
       ];
       this._profileAssetIds = [];
       for (let i = 0; i < profileImages.length; i++) {
