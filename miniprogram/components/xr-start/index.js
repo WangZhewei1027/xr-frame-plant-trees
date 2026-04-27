@@ -4,6 +4,7 @@ const createDanmakuMethods = require("./danmaku");
 const particle = require("./particle");
 const navigation = require("./navigation");
 const createHugeMethods = require("./huge");
+const createConfettiMethods = require("./confetti");
 
 const XR_CONFIG = {
   maxDistanceMeters: 50,
@@ -15,6 +16,7 @@ const XR_CONFIG = {
 const assetsMethods = createAssetsMethods(XR_CONFIG);
 const danmakuMethods = createDanmakuMethods(XR_CONFIG);
 const hugeMethods = createHugeMethods(XR_CONFIG);
+const confettiMethods = createConfettiMethods(XR_CONFIG);
 
 Component({
   behaviors: [require("../common/share-behavior").default],
@@ -48,6 +50,10 @@ Component({
         _hugeNodeList: [],
         _pendingHugeAssets: [],
         _isFetchingHuge: false,
+        // 随机彩带
+        _confettiBursts: [],
+        _confettiTimer: null,
+        _confettiCounter: 0,
       });
       this.startGPSWatch();
     },
@@ -75,6 +81,8 @@ Component({
       }
       this._hugeNodeList = [];
       this._pendingHugeAssets = [];
+      // 停止并清理随机彩带
+      this.stopRandomConfetti && this.stopRandomConfetti();
       if (this.spatialAudioList) {
         for (const entry of this.spatialAudioList) {
           try {
@@ -116,6 +124,9 @@ Component({
 
     // ─── 巨型远景模型 ─────────────────────────────────
     ...hugeMethods,
+
+    // ─── 随机彩带 ───────────────────────────────────
+    ...confettiMethods,
 
     // ─── 场景节点管理 ───────────────────────────────
     getCamTransform() {
@@ -219,6 +230,8 @@ Component({
 
     handleAssetsLoaded() {
       this.scene.event.addOnce("touchstart", this.placeNode.bind(this));
+      // 资源加载完成后启动随机彩带（依赖 particle-confetti 纹理）
+      this.startRandomConfetti();
     },
 
     handleAssetsProgress() {},
@@ -242,6 +255,7 @@ Component({
       this.tickFlyingDanmakus();
       this.tickRepulsion();
       this.tickAudioVolume();
+      this.tickModelAnimation();
       this.tickHugeModels();
 
       for (const entry of this.nodeList) {

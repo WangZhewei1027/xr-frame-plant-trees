@@ -204,6 +204,18 @@ module.exports = function (XR_CONFIG) {
         );
 
         this._registerNode(asset.id, rootNode, null);
+        // 为普通 model 节点添加动画参数：上下跳动 + 水平旋转
+        const lastEntry = this.nodeList[this.nodeList.length - 1];
+        if (lastEntry && lastEntry.node === rootNode) {
+          lastEntry.modelAnim = {
+            baseY: y,
+            bobAmplitude: 0.05, // 上下幅度 5cm
+            bobSpeed: 1.5 + Math.random() * 1.0, // 1.5~2.5 rad/s
+            bobPhase: Math.random() * Math.PI * 2,
+            rotateSpeed: 0.6 + Math.random() * 0.8, // 0.6~1.4 rad/s
+            rotateAngle: Math.random() * Math.PI * 2,
+          };
+        }
       } catch (e) {
         console.error("[model] 加载模型失败:", asset.file_url, e);
       }
@@ -466,6 +478,35 @@ module.exports = function (XR_CONFIG) {
             `[audio] dist=${dist.toFixed(2)}m  t=${t.toFixed(3)}  baseVol=${baseVolume}  setVol=${newVol.toFixed(3)}  ctx.volume=${ctx.volume}`,
           );
         }
+      }
+    },
+    /**
+     * 每帧驱动：为普通 model 节点添加上下小幅跳动 + 缓慢旋转。
+     * 需在 handleTick 中调用。巨型模型（_hugeNodeList）不受影响。
+     */
+    tickModelAnimation() {
+      const xr = wx.getXrFrameSystem();
+      if (!this.nodeList || this.nodeList.length === 0) return;
+      this._modelAnimLastTime = this._modelAnimLastTime || Date.now();
+      const now = Date.now();
+      const dt = Math.min((now - this._modelAnimLastTime) / 1000, 0.1);
+      this._modelAnimLastTime = now;
+
+      for (const entry of this.nodeList) {
+        const anim = entry.modelAnim;
+        if (!anim || !entry.node) continue;
+        const trs = entry.node.getComponent(xr.Transform);
+        if (!trs) continue;
+
+        // 上下跳动：基于初始 baseY 加上 sin 偏移
+        anim.bobPhase += anim.bobSpeed * dt;
+        trs.position.y =
+          anim.baseY + Math.sin(anim.bobPhase) * anim.bobAmplitude;
+
+        // 水平旋转：绕 Y 轴累加角度
+        anim.rotateAngle += anim.rotateSpeed * dt;
+        const half = anim.rotateAngle * 0.5;
+        trs.quaternion.setValue(0, Math.sin(half), 0, Math.cos(half));
       }
     },
   };

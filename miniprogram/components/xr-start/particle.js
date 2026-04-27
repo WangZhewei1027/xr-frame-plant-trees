@@ -12,21 +12,21 @@ module.exports = {
 
     const particleEl = scene.createElement(xr.XRParticle, {
       position: "0 0 0",
-      capacity: "200",
+      capacity: "300",
       "emit-rate": "0",
-      "burst-count": "120",
+      "burst-count": "150",
       "burst-time": "0",
       "burst-cycle": "1",
-      speed: "3 6",
-      size: "0.3 0.6",
-      "life-time": "0.6 1.2",
-      "start-color": "0.3 0.8 1 1",
-      "end-color": "1 0.5 0.9 0",
+      speed: "2 5",
+      size: "0.05 0.12",
+      "life-time": "1.0 2.0",
+      "start-color": "1 1 1 1",
+      "end-color": "1 1 1 0",
       "emitter-type": "SphereShape",
-      "emitter-props": "radius:1.5",
-      texture: "particle-point",
+      "emitter-props": "radius:0.5",
+      texture: "particle-confetti",
       "never-cull": "",
-      "stop-duration": "1.5",
+      "stop-duration": "2.0",
     });
     particleNode.addChild(particleEl);
 
