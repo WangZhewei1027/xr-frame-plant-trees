@@ -9,7 +9,10 @@ const createConfettiMethods = require("./confetti");
 const XR_CONFIG = {
   maxDistanceMeters: 50,
   maxNodeCount: 25,
+  // 参考点到当前位置的 x/z 净位移超过此值才重新拉取素材（单位：XR 世界米）
   distanceThreshold: 5,
+  // 两次拉取之间的最小间隔（毫秒），防止短时间内连续触发
+  fetchCooldownMs: 5000,
   treeModelUrl: "https://8thwall.8thwall.app/assets/tree-d51u9146bh.glb",
 };
 
@@ -31,8 +34,10 @@ Component({
         spatialAudioList: [],
         flyingDanmakus: [],
         particleTimers: [],
-        lastCamPos: null,
-        accumulatedDistance: 0,
+        // 上次拉取时相机的 x/z 参考点；null 表示尚未设置（首帧 tick 时初始化）
+        _fetchAnchorXZ: null,
+        // 上次触发 fetchNearbyAssets 的时间戳（用于冷却判断）
+        _lastFetchTime: 0,
         gpsReady: false,
         firstFetchDone: false,
         currentGPS: null,
@@ -245,12 +250,10 @@ Component({
 
       const camPos = camTransform.position;
 
-      if (this.lastCamPos) {
-        const dx = camPos.x - this.lastCamPos.x;
-        const dz = camPos.z - this.lastCamPos.z;
-        this.accumulatedDistance += Math.sqrt(dx * dx + dz * dz);
+      // 首帧时初始化参考点
+      if (!this._fetchAnchorXZ) {
+        this._fetchAnchorXZ = { x: camPos.x, z: camPos.z };
       }
-      this.lastCamPos = { x: camPos.x, z: camPos.z };
 
       this.tickFlyingDanmakus();
       this.tickRepulsion();
@@ -266,8 +269,19 @@ Component({
         xr.Quaternion.lookRotation(this.FACING, this.UP, trs.quaternion);
       }
 
-      if (this.accumulatedDistance >= XR_CONFIG.distanceThreshold) {
-        this.accumulatedDistance = 0;
+      // 计算参考点到当前相机位置的 x/z 净位移向量长度
+      const dax = camPos.x - this._fetchAnchorXZ.x;
+      const daz = camPos.z - this._fetchAnchorXZ.z;
+      const netDisplacement = Math.sqrt(dax * dax + daz * daz);
+      const now = Date.now();
+
+      if (
+        netDisplacement >= XR_CONFIG.distanceThreshold &&
+        now - this._lastFetchTime >= XR_CONFIG.fetchCooldownMs
+      ) {
+        // 以当前位置作为下一次计算的新参考点
+        this._fetchAnchorXZ = { x: camPos.x, z: camPos.z };
+        this._lastFetchTime = now;
         this.fetchNearbyAssets();
       }
     },
