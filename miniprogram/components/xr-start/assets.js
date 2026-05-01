@@ -62,27 +62,32 @@ module.exports = function (XR_CONFIG) {
     //   toAdd.slice(0, Math.max(0, slots)).forEach((a) => this._placeAsset(a));
     // },
 
-    /** 每次拉取后全量放置，重复 ID 删旧留新，超出 maxNodeCount 时驱逐最旧节点 */
+    /**
+     * 双队列策略（oldQueue / newQueue / danmakuQueue 共享同一个 nodeList 数组，靠 entry.gen 区分）：
+     *   - gen='old'：上一轮及更早拉取遗留。驱逐策略 = 离用户最远优先。包含从数据库拉下来的历史弹幕（text 类型）。
+     *   - gen='new'：本轮拉取刚放置。驱逐策略 = FIFO。
+     *   - gen='danmaku'：用户刚发、尚未入库返回的在场弹幕。驱逐策略 = FIFO 独立队列。
+     *
+     * 拉取生命周期（displayAssets 入口）：
+     *   1. 将上轮的所有 'new' 提升为 'old'（轮次转换）
+     *   2. 以整个 nodeList 的 assetId 为准 diff，跳过重复、保证场景无重复素材
+     *   3. 逐个放置新素材，_registerNode 以 gen='new' 插入并触发该队列的容量检查
+     */
     displayAssets(assets) {
-      // 先移除与本次拉取重复的旧节点（按 assetId 去重，弹幕节点 assetId===null 不参与）
-      const incomingIds = new Set(assets.map((a) => a.id));
-      const kept = [];
+      // 1. 轮次转换：上一轮的 'new' 变为 'old'。弹幕队列不受影响。
       for (const entry of this.nodeList) {
-        if (entry.assetId !== null && incomingIds.has(entry.assetId)) {
-          this._destroyNode(entry);
-        } else {
-          kept.push(entry);
-        }
+        if (entry.gen === "new") entry.gen = "old";
       }
-      this.nodeList = kept;
 
-      // 超出上限时，从头部驱逐最旧节点
-      while (this.nodeList.length + assets.length > XR_CONFIG.maxNodeCount) {
-        const oldest = this.nodeList.shift();
-        if (oldest) this._destroyNode(oldest);
-        else break;
+      // 2. diff 去重：跳过任何队列中已存在的 assetId
+      const cachedIds = new Set();
+      for (const entry of this.nodeList) {
+        if (entry.assetId !== null) cachedIds.add(entry.assetId);
       }
-      assets.forEach((a) => this._placeAsset(a));
+      const newAssets = assets.filter((a) => !cachedIds.has(a.id));
+
+      // 3. 放置新素材；_registerNode 会在插入后自动检查各队列的容量
+      newAssets.forEach((a) => this._placeAsset(a));
     },
 
     /** 按 file_type 分发到对应的放置方法 */
@@ -94,20 +99,85 @@ module.exports = function (XR_CONFIG) {
     },
 
     /**
-     * 统一注册一个已创建好的场景节点。
-     * 提供双重 maxNodeCount 保护（应对异步竞态），超出时驱逐最旧节点。
-     * audioRefs: 可选，{ source, gainNode, panner }，销毁时一并停止音频。
+     * 统一注册一个已创建好的场景节点，追加到 nodeList 末尾。
+     * gen 推断优先级：
+     *   - 显式传入 opts.gen → 尊重（用于弹幕主动传 'danmaku'）
+     *   - 否则 assetId === null → 弹幕带入 'danmaku'（发送逻辑未传 gen 的兼容默认值）
+     *   - 否则 → 'new'
      */
-    _registerNode(assetId, node, billboardEl, audioRefs) {
-      while (this.nodeList.length >= XR_CONFIG.maxNodeCount) {
-        this._destroyNode(this.nodeList.shift());
-      }
-      this.nodeList.push({
+    _registerNode(assetId, node, billboardEl, audioRefs, opts) {
+      const gen = (opts && opts.gen) || (assetId === null ? "danmaku" : "new");
+      const newEntry = {
         assetId,
         node,
         billboardEl,
         audioRefs: audioRefs || null,
-      });
+        gen,
+      };
+      this.nodeList.push(newEntry);
+      this._enforceCapacity(newEntry);
+    },
+
+    /**
+     * 分队列硬上限驱逐。三个队列互不影响。
+     *   - newQueue (gen='new')      : 超 maxNewNodeCount    → FIFO
+     *   - oldQueue (gen='old')      : 超 maxOldNodeCount    → 最远优先
+     *   - danmakuQueue(gen='danmaku'): 超 maxDanmakuCount    → FIFO
+     * protectEntry: 刚插入的节点引用，不参与驱逐。
+     */
+    _enforceCapacity(protectEntry) {
+      const xr = wx.getXrFrameSystem();
+      const camPos = this.getCamTransform()?.position;
+
+      const evictFifo = (genTag, maxCount) => {
+        while (true) {
+          const list = this.nodeList.filter((e) => e.gen === genTag);
+          if (list.length <= maxCount) break;
+          let victimIdx = -1;
+          for (let i = 0; i < this.nodeList.length; i++) {
+            const e = this.nodeList[i];
+            if (e === protectEntry) continue;
+            if (e.gen !== genTag) continue;
+            victimIdx = i;
+            break;
+          }
+          if (victimIdx < 0) break;
+          this._destroyNode(this.nodeList.splice(victimIdx, 1)[0]);
+        }
+      };
+
+      const evictFarthest = (genTag, maxCount) => {
+        while (true) {
+          const list = this.nodeList.filter((e) => e.gen === genTag);
+          if (list.length <= maxCount) break;
+          let victimIdx = -1;
+          let victimDistSq = -Infinity;
+          for (let i = 0; i < this.nodeList.length; i++) {
+            const e = this.nodeList[i];
+            if (e === protectEntry) continue;
+            if (e.gen !== genTag) continue;
+            let d = Infinity;
+            if (camPos) {
+              const wp = e.node?.getComponent(xr.Transform)?.worldPosition;
+              if (wp) {
+                const dx = wp.x - camPos.x;
+                const dz = wp.z - camPos.z;
+                d = dx * dx + dz * dz;
+              }
+            }
+            if (d > victimDistSq) {
+              victimDistSq = d;
+              victimIdx = i;
+            }
+          }
+          if (victimIdx < 0) break;
+          this._destroyNode(this.nodeList.splice(victimIdx, 1)[0]);
+        }
+      };
+
+      evictFifo("new", XR_CONFIG.maxNewNodeCount);
+      evictFarthest("old", XR_CONFIG.maxOldNodeCount);
+      evictFifo("danmaku", XR_CONFIG.maxDanmakuCount);
     },
 
     /** 统一销毁一个 nodeList 条目（从场景中移除根节点，清理相关引用） */
