@@ -8,17 +8,55 @@ const DEFAULT_CONFIG = {
   workspaceId: "388bc7ed-068e-4e20-8e66-53aa1e952b98", // 东明/test
 };
 
+const SCAN_CONFIG_STORAGE_KEY = "config:scan:v1";
+
+/** 读取持久化的上次扫码参数 */
+function loadPersistedScanConfig(): {
+  organizationId?: string;
+  workspaceId?: string;
+} {
+  try {
+    const saved = wx.getStorageSync(SCAN_CONFIG_STORAGE_KEY);
+    return saved && typeof saved === "object" ? saved : {};
+  } catch (e) {
+    console.error("[storage] config read failed", e);
+    return {};
+  }
+}
+
+/** 持久化扫码参数 */
+function persistScanConfig(config: {
+  organizationId?: string;
+  workspaceId?: string;
+}) {
+  try {
+    wx.setStorageSync(SCAN_CONFIG_STORAGE_KEY, config);
+  } catch (e) {
+    console.error("[storage] config write failed", e);
+  }
+}
+
+// 优先级：扫码参数 > storage 上次扫码参数 > 兜底默认值
+// 此处初始化时先合并 storage（模块加载时生效，onLoad 中若有扫码参数会进一步覆盖）
 export const CONFIG: { organizationId?: string; workspaceId?: string } = {
   ...DEFAULT_CONFIG,
+  ...loadPersistedScanConfig(),
 };
 
-/** 从页面 query 参数更新 CONFIG */
+/** 从页面 query 参数更新 CONFIG；若有扫码参数则持久化到 Storage */
 export function setConfig(params: {
   organizationId?: string;
   workspaceId?: string;
 }) {
+  const hasScanParams = !!(params.organizationId || params.workspaceId);
   if (params.organizationId) CONFIG.organizationId = params.organizationId;
   if (params.workspaceId) CONFIG.workspaceId = params.workspaceId;
+  if (hasScanParams) {
+    persistScanConfig({
+      organizationId: CONFIG.organizationId,
+      workspaceId: CONFIG.workspaceId,
+    });
+  }
 }
 
 /** Supabase REST GET 查询，支持 query string 过滤 */
