@@ -1,0 +1,27 @@
+/** 文本素材：在相机周围随机位置放置一个气泡节点 */
+module.exports = {
+  _placeTextAsset(asset) {
+    const xr = wx.getXrFrameSystem();
+    const scene = this.scene;
+    const camTransform = this.getCamTransform();
+    if (!scene || !camTransform) return;
+
+    const camPos = camTransform.position;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 0.8 + Math.random() * 0.7;
+    const x = camPos.x + Math.cos(angle) * radius;
+    const z = camPos.z + Math.sin(angle) * radius;
+    const y = camPos.y + (Math.random() - 0.5) * 0.6;
+
+    const rootNode = scene.createElement(xr.XRNode, {
+      id: `label-node-${this.nodeIdCounter++}`,
+      position: `${x} ${y} ${z}`,
+      scale: "0.1 0.1 0.1",
+    });
+    this.shadowRoot.addChild(rootNode);
+
+    this._buildBubbleNodes(rootNode, asset.text_content || "无内容");
+    // billboard 目标 = rootNode，让整个气泡结构朝向相机
+    this._registerNode(asset.id, rootNode, rootNode);
+  },
+};

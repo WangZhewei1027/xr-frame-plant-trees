@@ -10,6 +10,20 @@ module.exports = function (XR_CONFIG) {
       const xr = wx.getXrFrameSystem();
       const scene = this.scene;
 
+      // plain_white：严格无装饰，只显示纯白文字
+      if (this._textAssetStyle === "plain_white") {
+        const textEl = scene.createElement(xr.XRText, {
+          position: "0 0 0",
+          value: text,
+          size: "1.5",
+          anchor: "0.5 0.5",
+          "never-cull": "",
+          uniforms: "u_baseColorFactor:1 1 1 1",
+        });
+        rootNode.addChild(textEl);
+        return textEl;
+      }
+
       // ── 紫色半透明气泡 + 发亮边框 ──
       const dir = Math.random() > 0.5 ? 1 : -1;
       const textColor = "0.945 0.914 0.914 1"; // #F1E9E9

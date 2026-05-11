@@ -1,4 +1,4 @@
-const { CONFIG, supabaseRpc } = require("../../utils/supabase");
+const { CONFIG, supabaseRpc } = require("../../../utils/supabase");
 
 /**
  * 巨型远景模型：从 asset 表查询 is_huge=true 的 model，
