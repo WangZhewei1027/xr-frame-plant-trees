@@ -239,11 +239,15 @@ module.exports = function (XR_CONFIG) {
 
       try {
         const assetId = `model-asset-${this.nodeIdCounter}`;
+        console.log(
+          `[model] 开始加载 assetId=${assetId} url=${asset.file_url}`,
+        );
         const { value: model } = await scene.assets.loadAsset({
           type: "gltf",
           assetId,
           src: asset.file_url,
         });
+        console.log(`[model] 加载完成 assetId=${assetId} model=`, model);
 
         // 先把节点加入场景，再通过 Transform API 设置世界坐标，
         // 避免 createElement 字符串属性在 AR 模式下被清空或变为摄像机相对坐标
@@ -256,11 +260,15 @@ module.exports = function (XR_CONFIG) {
         transform.position.x = x;
         transform.position.y = y;
         transform.position.z = z;
+        console.log(
+          `[model] 节点 ${rootNode.id} 已挂载到场景，世界坐标 x=${x.toFixed(3)} y=${y.toFixed(3)} z=${z.toFixed(3)}`,
+        );
 
         const gltfEl = scene.createElement(xr.XRGLTF);
         const gltfComp = gltfEl.getComponent(xr.GLTF);
         gltfComp.setData({ model });
         rootNode.addChild(gltfEl);
+        console.log(`[model] GLTF 组件已创建并挂载到节点 ${rootNode.id}`);
 
         // 计算模型包围盒，将最长边 normalize 到 1m
         const boundBox = gltfComp.calcTotalBoundBox();
@@ -272,19 +280,49 @@ module.exports = function (XR_CONFIG) {
           normalizeScale,
           normalizeScale,
         );
+        console.log(
+          `[model] 包围盒 size=${size.x.toFixed(3)}x${size.y.toFixed(3)}x${size.z.toFixed(3)} maxExtent=${maxExtent.toFixed(3)} scale=${normalizeScale.toFixed(4)}`,
+        );
+
+        // 检查模型是否含有内置动画（GLTF/GLB 均支持）
+        const animator = gltfEl.getComponent(xr.Animator);
+        const hasAnimation =
+          animator && animator._clips && animator._clips.size > 0;
+        console.log(
+          `[model] Animator 组件:`,
+          animator ? "存在" : "不存在",
+          `| 动画片段数:`,
+          animator?._clips?.size ?? 0,
+        );
+
+        if (hasAnimation) {
+          // 循环播放所有动画片段（不传 loop 选项默认无限循环）
+          animator._clips.forEach((_, clipName) => {
+            try {
+              animator.play(clipName);
+              console.log(`[model] ✅ 成功播放动画片段: "${clipName}"`);
+            } catch (e) {
+              console.warn(`[model] ❌ 播放动画片段失败: "${clipName}"`, e);
+            }
+          });
+        } else {
+          console.log(`[model] 无内置动画，使用上下跳动+旋转替代`);
+        }
 
         this._registerNode(asset.id, rootNode, null);
-        // 为普通 model 节点添加动画参数：上下跳动 + 水平旋转
-        const lastEntry = this.nodeList[this.nodeList.length - 1];
-        if (lastEntry && lastEntry.node === rootNode) {
-          lastEntry.modelAnim = {
-            baseY: y,
-            bobAmplitude: 0.05, // 上下幅度 5cm
-            bobSpeed: 1.5 + Math.random() * 1.0, // 1.5~2.5 rad/s
-            bobPhase: Math.random() * Math.PI * 2,
-            rotateSpeed: 0.6 + Math.random() * 0.8, // 0.6~1.4 rad/s
-            rotateAngle: Math.random() * Math.PI * 2,
-          };
+        // 无内置动画时才叠加上下跳动 + 水平旋转效果
+        if (!hasAnimation) {
+          const lastEntry = this.nodeList[this.nodeList.length - 1];
+          if (lastEntry && lastEntry.node === rootNode) {
+            lastEntry.modelAnim = {
+              baseY: y,
+              bobAmplitude: 0.05, // 上下幅度 5cm
+              bobSpeed: 1.5 + Math.random() * 1.0, // 1.5~2.5 rad/s
+              bobPhase: Math.random() * Math.PI * 2,
+              rotateSpeed: 0.6 + Math.random() * 0.8, // 0.6~1.4 rad/s
+              rotateAngle: Math.random() * Math.PI * 2,
+            };
+          }
         }
       } catch (e) {
         console.error("[model] 加载模型失败:", asset.file_url, e);

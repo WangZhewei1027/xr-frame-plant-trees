@@ -19,15 +19,9 @@ module.exports = function (XR_CONFIG) {
     /** 启动随机彩带循环 */
     startRandomConfetti() {
       if (this._confettiTimer) {
-        console.log("[confetti] already started, skip");
         return;
       }
       this._confettiBursts = this._confettiBursts || [];
-      console.log("[confetti] startRandomConfetti", {
-        hasScene: !!this.scene,
-        hasShadowRoot: !!this.shadowRoot,
-        hasGetCamTransform: typeof this.getCamTransform === "function",
-      });
       // 立刻先生成一发，便于调试
       this._spawnRandomConfetti();
       this._scheduleNextConfetti();
@@ -57,11 +51,6 @@ module.exports = function (XR_CONFIG) {
       const scene = this.scene;
       const camTransform = this.getCamTransform();
       if (!scene || !camTransform || !this.shadowRoot) {
-        console.warn("[confetti] spawn skipped:", {
-          hasScene: !!scene,
-          hasCamTransform: !!camTransform,
-          hasShadowRoot: !!this.shadowRoot,
-        });
         return;
       }
 
@@ -106,27 +95,6 @@ module.exports = function (XR_CONFIG) {
       trs.position.y = y;
       trs.position.z = z;
 
-      console.log("[confetti] spawn", {
-        camPos: {
-          x: +camPos.x.toFixed(2),
-          y: +camPos.y.toFixed(2),
-          z: +camPos.z.toFixed(2),
-        },
-        camForward: {
-          x: +camForward.x.toFixed(2),
-          y: +camForward.y.toFixed(2),
-          z: +camForward.z.toFixed(2),
-        },
-        horizForward: { fx: +fx.toFixed(2), fz: +fz.toFixed(2) },
-        offsets: {
-          forwardDist: +forwardDist.toFixed(2),
-          sideOff: +sideOff.toFixed(2),
-          heightOff: +heightOff.toFixed(2),
-        },
-        spawn: { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2) },
-        active: this._confettiBursts.length + 1,
-      });
-
       const particleEl = scene.createElement(xr.XRParticle, {
         position: "0 0 0",
         capacity: "16",
@@ -164,9 +132,6 @@ module.exports = function (XR_CONFIG) {
           ps.addAlphaGradient(0.08, 1, 1);
           ps.addAlphaGradient(0.7, 1, 1);
           ps.addAlphaGradient(1, 0, 0);
-          console.log("[confetti] particle component ready");
-        } else {
-          console.warn("[confetti] xr.Particle component NOT found on element");
         }
       } catch (e) {
         console.warn("[confetti] particle gradient setup failed", e);
