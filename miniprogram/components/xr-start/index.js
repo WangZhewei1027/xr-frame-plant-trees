@@ -23,6 +23,9 @@ function buildInitialState() {
     spatialAudioList: [],
     flyingDanmakus: [],
     particleTimers: [],
+    // 预加载完成（tree/profile/bubble 全部就绪）才开始放置素材，避免气泡/头像降级
+    _preloadDone: false,
+    _pendingDisplayAssets: [],
     // 上次拉取时相机的 x/z 参考点；null 表示尚未设置（首帧 tick 时初始化）
     _fetchAnchorXZ: null,
     // 上次触发 fetchNearbyAssets 的时间戳（用于冷却判断）
@@ -169,8 +172,13 @@ Component({
       this.UP = xr.Vector3.createFromNumber(0, 1, 0);
 
       await this.loadTreeModel(xrScene);
-      await this.loadProfileTextures(xrScene);
-      await this.loadBubbleTextures(xrScene);
+      await Promise.all([
+        this.loadProfileTextures(xrScene),
+        this.loadBubbleTextures(xrScene),
+      ]);
+      this._preloadDone = true;
+      // 预加载期间 GPS 触发的 fetch 已把 assets 暂存到 _pendingDisplayAssets，统一刷出
+      this.flushPendingDisplayAssets();
 
       // 若导航目标在场景就绪前已设置，延迟创建导航系统
       if (this._navTarget) {

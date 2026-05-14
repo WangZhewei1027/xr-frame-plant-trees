@@ -64,6 +64,14 @@ module.exports = function (XR_CONFIG) {
      *   3. 逐个放置新素材，_registerNode 以 gen='new' 插入并触发该队列的容量检查
      */
     displayAssets(assets) {
+      // 预加载（scene + 头像/气泡纹理）未就绪时，先暂存，等 flushPendingDisplayAssets 调用
+      if (!this._preloadDone) {
+        this._pendingDisplayAssets = (this._pendingDisplayAssets || []).concat(
+          assets,
+        );
+        return;
+      }
+
       // 1. 轮次转换：上一轮的 'new' 变为 'old'。弹幕队列不受影响。
       for (const entry of this.nodeList) {
         if (entry.gen === "new") entry.gen = "old";
@@ -78,6 +86,16 @@ module.exports = function (XR_CONFIG) {
 
       // 3. 放置新素材；_registerNode 会在插入后自动检查各队列的容量
       newAssets.forEach((a) => this._placeAsset(a));
+    },
+
+    /** 预加载完成后由 index.js 调用，把暂存的 assets 一次性放置 */
+    flushPendingDisplayAssets() {
+      if (!this._pendingDisplayAssets || !this._pendingDisplayAssets.length) {
+        return;
+      }
+      const pending = this._pendingDisplayAssets;
+      this._pendingDisplayAssets = [];
+      this.displayAssets(pending);
     },
 
     /** 按 file_type 分发到对应的放置方法 */
