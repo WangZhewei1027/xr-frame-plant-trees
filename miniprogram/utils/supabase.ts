@@ -49,7 +49,11 @@ export function setConfig(params: {
   workspaceId?: string;
 }) {
   const hasScanParams = !!(params.organizationId || params.workspaceId);
-  if (params.organizationId) CONFIG.organizationId = params.organizationId;
+  if (params.organizationId) {
+    CONFIG.organizationId = params.organizationId;
+    // 新 orgId 未携带 workspaceId 时，清除旧 workspaceId，避免跨组织错配
+    if (!params.workspaceId) CONFIG.workspaceId = undefined;
+  }
   if (params.workspaceId) CONFIG.workspaceId = params.workspaceId;
   if (hasScanParams) {
     persistScanConfig({
