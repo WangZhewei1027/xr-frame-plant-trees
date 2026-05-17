@@ -84,7 +84,15 @@ module.exports = function (XR_CONFIG) {
         const size = boundBox.size;
         const maxExtent = Math.max(size.x, size.y, size.z);
         const s = maxExtent > 0.0001 ? 0.3 / maxExtent : 0.3;
-        transform.scale.setValue(s, s, s);
+        const scaleMultiplier =
+          asset.config && asset.config.scale_multiplier
+            ? asset.config.scale_multiplier
+            : 1.0;
+        const finalScale = s * scaleMultiplier;
+        transform.scale.setValue(finalScale, finalScale, finalScale);
+        console.log(
+          `[audio] 耳机模型 normalizeScale=${s.toFixed(4)} scaleMultiplier=${scaleMultiplier} finalScale=${finalScale.toFixed(4)}`,
+        );
 
         // audioRefs.ctx 在 _destroyNode 中自动 stop()+destroy()
         // 直接存储世界坐标，避免依赖 worldPosition（多节点时可能不稳定）

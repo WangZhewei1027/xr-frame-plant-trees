@@ -48,9 +48,14 @@ module.exports = {
       const size = boundBox.size;
       const maxExtent = Math.max(size.x, size.y, size.z);
       const normalizeScale = maxExtent > 0.0001 ? 1.0 / maxExtent : 1.0;
-      transform.scale.setValue(normalizeScale, normalizeScale, normalizeScale);
+      const scaleMultiplier =
+        asset.config && asset.config.scale_multiplier
+          ? asset.config.scale_multiplier
+          : 1.0;
+      const finalScale = normalizeScale * scaleMultiplier;
+      transform.scale.setValue(finalScale, finalScale, finalScale);
       console.log(
-        `[model] 包围盒 size=${size.x.toFixed(3)}x${size.y.toFixed(3)}x${size.z.toFixed(3)} maxExtent=${maxExtent.toFixed(3)} scale=${normalizeScale.toFixed(4)}`,
+        `[model] 包围盒 size=${size.x.toFixed(3)}x${size.y.toFixed(3)}x${size.z.toFixed(3)} maxExtent=${maxExtent.toFixed(3)} normalizeScale=${normalizeScale.toFixed(4)} scaleMultiplier=${scaleMultiplier} finalScale=${finalScale.toFixed(4)}`,
       );
 
       // 检查模型是否含有内置动画（GLTF/GLB 均支持）

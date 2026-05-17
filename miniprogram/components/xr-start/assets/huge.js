@@ -171,7 +171,11 @@ module.exports = function (XR_CONFIG) {
         const size = boundBox.size;
         const maxExtent = Math.max(size.x, size.y, size.z);
         const normalizeScale = maxExtent > 0.0001 ? 1.0 / maxExtent : 1.0;
-        const hugeScale = normalizeScale * HUGE_MODEL_SCALE;
+        const scaleMultiplier =
+          asset.config && asset.config.scale_multiplier
+            ? asset.config.scale_multiplier
+            : 1.0;
+        const hugeScale = normalizeScale * HUGE_MODEL_SCALE * scaleMultiplier;
         transform.scale.setValue(hugeScale, hugeScale, hugeScale);
 
         // 读回实际设置的 transform 值
@@ -181,6 +185,7 @@ module.exports = function (XR_CONFIG) {
           `[huge] ✅ 放置完成 id=${asset.id}:`,
           `\n  boundBox.size=(${size.x.toFixed(3)}, ${size.y.toFixed(3)}, ${size.z.toFixed(3)})`,
           `\n  maxExtent=${maxExtent.toFixed(3)}, normalizeScale=${normalizeScale.toFixed(3)}`,
+          `\n  scaleMultiplier=${scaleMultiplier}`,
           `\n  hugeScale=${hugeScale.toFixed(3)}`,
           `\n  实际position=(${actualPos.x.toFixed(2)}, ${actualPos.y.toFixed(2)}, ${actualPos.z.toFixed(2)})`,
           `\n  实际scale=(${actualScale.x.toFixed(3)}, ${actualScale.y.toFixed(3)}, ${actualScale.z.toFixed(3)})`,
