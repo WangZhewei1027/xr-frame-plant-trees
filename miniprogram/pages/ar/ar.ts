@@ -1,4 +1,4 @@
-import { CONFIG, supabaseRpc, setConfig } from "../../utils/supabase";
+import { CONFIG, supabaseRpc } from "../../utils/supabase";
 
 interface LocationData {
   latitude: number;
@@ -22,11 +22,10 @@ Page({
     compassHeading: 0,
   },
 
-  onLoad(options: Record<string, string | undefined>) {
-    setConfig({
-      organizationId: options.organizationId,
-      workspaceId: options.workspaceId,
-    });
+  onLoad(_options: Record<string, string | undefined>) {
+    // CONFIG 已由 index.ts 的 setConfig 设置（扫码 → Storage → 模块初始化）；
+    // ar.ts 始终由 goToAR() 跳转进入，不应在此持久化 URL 参数，
+    // 否则微信「最近使用」场景下的过期 URL 会覆盖更新的 Storage 扫码结果。
     const {
       windowWidth: width,
       windowHeight: height,

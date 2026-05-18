@@ -17,7 +17,17 @@ function loadPersistedScanConfig(): {
 } {
   try {
     const saved = wx.getStorageSync(SCAN_CONFIG_STORAGE_KEY);
-    return saved && typeof saved === "object" ? saved : {};
+    if (saved && typeof saved === "object" && saved.organizationId) {
+      // 必须显式包含 workspaceId 键（即便值为 undefined），
+      // 否则 spread 合并时 DEFAULT_CONFIG.workspaceId 会静默渗入。
+      // 背景：undefined 值会被 JSON 序列化丢弃，Storage 里不存在该 key，
+      // 导致 { ...DEFAULT_CONFIG, ...savedObject } 无法覆盖 workspaceId。
+      return {
+        organizationId: saved.organizationId as string,
+        workspaceId: (saved.workspaceId as string) || undefined,
+      };
+    }
+    return {};
   } catch (e) {
     console.error("[storage] config read failed", e);
     return {};
