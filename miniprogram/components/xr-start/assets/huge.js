@@ -15,12 +15,18 @@ module.exports = function (XR_CONFIG) {
      */
     async fetchHugeAssets() {
       if (this._isFetchingHuge || !this.currentGPS) return;
+      // organizationId 必须有；workspaceId 可选（为 null/undefined 时 RPC 返回该 org 下全部 workspace 的巨型模型）
+      if (!CONFIG.organizationId) {
+        console.warn("[huge] 缺少 organizationId，跳过巨型模型拉取");
+        return;
+      }
       this._isFetchingHuge = true;
 
       try {
         const { statusCode, data } = await supabaseRpc("get_huge_assets", {
-          p_workspace_id: CONFIG.workspaceId,
           p_organization_id: CONFIG.organizationId,
+          // workspaceId 未设置时传 null，RPC 解释为"不限 workspace"
+          p_workspace_id: CONFIG.workspaceId ?? null,
         });
 
         console.log(
