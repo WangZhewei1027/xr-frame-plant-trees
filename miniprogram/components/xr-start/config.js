@@ -1,6 +1,6 @@
 /** xr-start 全局配置 */
 const XR_CONFIG = {
-  maxDistanceMeters: 50,
+  maxDistanceMeters: 20,
   // 三个队列分开管理：
   //   - newQueue：本轮拉取引入的新节点，超限时 FIFO 驱逐（保留最近刚到的）
   //   - oldQueue：上一轮及更早拉取遗留的节点，超限时 "离用户最远" 优先驱逐

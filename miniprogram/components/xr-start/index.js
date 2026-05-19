@@ -86,9 +86,7 @@ Component({
       }
       this.flyingDanmakus = [];
       for (const entry of this.nodeList) {
-        try {
-          this.shadowRoot?.removeChild(entry.node);
-        } catch (_) {}
+        this._destroyNode(entry);
       }
       this.nodeList = [];
       // 清理巨型远景模型

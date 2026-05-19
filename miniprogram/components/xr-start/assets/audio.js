@@ -90,9 +90,6 @@ module.exports = function (XR_CONFIG) {
             : 1.0;
         const finalScale = s * scaleMultiplier;
         transform.scale.setValue(finalScale, finalScale, finalScale);
-        console.log(
-          `[audio] 耳机模型 normalizeScale=${s.toFixed(4)} scaleMultiplier=${scaleMultiplier} finalScale=${finalScale.toFixed(4)}`,
-        );
 
         // audioRefs.ctx 在 _destroyNode 中自动 stop()+destroy()
         // 直接存储世界坐标，避免依赖 worldPosition（多节点时可能不稳定）
@@ -134,35 +131,53 @@ module.exports = function (XR_CONFIG) {
 
     /**
      * 每帧根据音源节点与相机的距离动态调整音量。
-     * refDist 以内保持 baseVolume，超过后按 (refDist/dist)² 平方反比衰减，
+     * refDist 以内保持 baseVolume，超过后按 (refDist/dist)⁴ 四次方反比衰减（比平方衰减更陡），
      * 超过 maxDistanceMeters 强制为 0。
+     * 焦点机制：当观众与某音源距离 ≤ focusDist（0.3m）时，仅保留该音源音量，其余全部静音。
+     *   1m→1.0  1.5m→0.20  2m→0.0625  3m→0.012  5m→0.0016
      */
     tickAudioVolume() {
       const camTransform = this.getCamTransform();
       if (!camTransform) return;
       const camPos = camTransform.worldPosition;
-      // 1m→1.0  2m→0.25  3m→0.11  5m→0.04
       const refDist = 1.0;
       const cutoffDist = XR_CONFIG.maxDistanceMeters || 20;
-      this._audioDbgTick = (this._audioDbgTick || 0) + 1;
-      const log = this._audioDbgTick % 60 === 0;
-      for (const entry of this.nodeList) {
-        if (!entry.audioRefs) continue;
-        const { ctx, baseVolume, srcX, srcY, srcZ } = entry.audioRefs;
+      const focusDist = 0.3;
+
+      const audioEntries = this.nodeList.filter((e) => e.audioRefs);
+
+      // 第一遍：计算各音源距离，找出是否有处于焦点范围内的音源（取最近的）
+      let focusedEntry = null;
+      let minFocusDist = Infinity;
+      for (const entry of audioEntries) {
+        const { srcX, srcY, srcZ } = entry.audioRefs;
         const dist = Math.sqrt(
           (srcX - camPos.x) ** 2 +
             (srcY - camPos.y) ** 2 +
             (srcZ - camPos.z) ** 2,
         );
-        const r = Math.max(dist, refDist);
-        const t = dist >= cutoffDist ? 0 : (refDist * refDist) / (r * r);
-        const newVol = baseVolume * t;
-        ctx.volume = newVol;
-        if (log) {
-          console.log(
-            `[audio] dist=${dist.toFixed(2)}m  t=${t.toFixed(3)}  baseVol=${baseVolume}  setVol=${newVol.toFixed(3)}  ctx.volume=${ctx.volume}`,
-          );
+        entry.audioRefs._cachedDist = dist;
+        if (dist <= focusDist && dist < minFocusDist) {
+          minFocusDist = dist;
+          focusedEntry = entry;
         }
+      }
+
+      // 第二遍：按焦点模式或正常衰减设置音量
+      for (const entry of audioEntries) {
+        const { ctx, baseVolume } = entry.audioRefs;
+        const dist = entry.audioRefs._cachedDist;
+        let newVol;
+        if (focusedEntry !== null) {
+          // 焦点模式：仅焦点音源保持原始音量，其余静音
+          newVol = entry === focusedEntry ? baseVolume : 0;
+        } else {
+          // 四次方衰减，陡降曲线
+          const r = Math.max(dist, refDist);
+          const t = dist >= cutoffDist ? 0 : Math.pow(refDist / r, 4);
+          newVol = baseVolume * t;
+        }
+        ctx.volume = newVol;
       }
     },
   };
