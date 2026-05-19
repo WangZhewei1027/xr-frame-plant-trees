@@ -89,6 +89,70 @@ loadAsset(下载+解析+GPU上传) → createElement → setData(触发 instanti
 
 GLB 几 MB 时整链路 500-1500ms 同步执行，主线程冻结。
 
+### 3.0 流程对比图
+
+#### 优化前：每个模型独立"下载+解析+上传+算盒"同步连成长任务
+
+```mermaid
+sequenceDiagram
+    participant U as 用户视角
+    participant M as 主线程
+    participant N as 网络
+    participant G as GPU
+
+    Note over M: 放置 模型A
+    M->>N: loadAsset(GLB-A, assetId=model-1)
+    N-->>M: 下载完成（400ms）
+    M->>M: 解析 GLTF（300ms）
+    M->>G: setData 上传（150ms）
+    M->>M: calcTotalBoundBox（200ms）
+    Note over U: ❄️ 冻结 ~1050ms
+
+    Note over M: 放置 模型B（与A是同一个URL）
+    M->>N: loadAsset(GLB-A, assetId=model-2)  ⚠️新id
+    N-->>M: 又下载一遍（400ms）
+    M->>M: 又解析一遍（300ms）
+    M->>G: setData 上传（150ms）
+    M->>M: calcTotalBoundBox（200ms）
+    Note over U: ❄️ 再冻结 ~1050ms
+```
+
+#### 优化后：Prefetch 并发 + 缓存命中 + 让帧切片
+
+```mermaid
+sequenceDiagram
+    participant U as 用户视角
+    participant M as 主线程
+    participant N as 网络
+    participant G as GPU
+    participant C as Promise缓存
+
+    Note over M: displayAssets 收到 [A, A, B]
+    M->>C: prefetch A → 启动 Promise(A)
+    M->>N: 后台下载 A
+    M->>C: prefetch B → 启动 Promise(B)
+    M->>N: 后台下载 B
+
+    Note over M: 串行队列轮到 放置A-第1个
+    M->>C: await Promise(A)
+    N-->>C: 下载完成（与下面操作并行）
+    C-->>M: model
+    M->>M: await yieldFrame ⏯️
+    Note over U: 🎨 渲染线程出一帧
+    M->>G: setData
+    M->>M: await yieldFrame ⏯️
+    Note over U: 🎨 又出一帧
+    M->>M: calcTotalBoundBox
+
+    Note over M: 放置A-第2个（同URL）
+    M->>C: await Promise(A) — 已resolve
+    C-->>M: 同一个 model（0网络/0解析）
+    M->>G: setData（仅GPU实例化）
+    Note over M: 包围盒查表命中 → 跳过 calc
+
+    Note over U: 👀 每段≤200ms，肉眼平滑
+```
+
 ### 3.1 按 URL 复用 assetId — [assets/model.js](../miniprogram/components/xr-start/assets/model.js)
 
 xr-frame 的 `scene.assets` 按 `assetId` 缓存。原代码 `assetId: model-${nodeIdCounter}` 让每次放置都是新 id，等价于强制重新下载。
@@ -156,6 +220,28 @@ const boundBox = gltfComp.calcTotalBoundBox();  // 遍历 mesh
 
 效果：原本 800ms 一个长任务 → 切成 3 段 ~200ms，每段间隙渲染线程可出 ~12 帧，用户看到的是平滑展开而非"咔哒一下"。
 
+#### 主线程时间轴对比
+
+```mermaid
+gantt
+    title 放置一个模型的主线程占用（毫秒）
+    dateFormat X
+    axisFormat %L
+
+    section 优化前
+    loadAsset(下载+解析)  :a1, 0, 700
+    setData上传           :a2, after a1, 150
+    calcBoundBox          :a3, after a2, 200
+    (主线程冻结 1050ms)   :crit, a4, 0, 1050
+
+    section 优化后
+    loadAsset(prefetch已就绪) :b1, 0, 20
+    yieldFrame                :milestone, m1, 20, 0
+    setData上传               :b2, 100, 150
+    yieldFrame                :milestone, m2, 250, 0
+    calcBoundBox或缓存命中    :b3, 320, 100
+```
+
 ### 3.5 包围盒缓存
 
 `calcTotalBoundBox` 对高面数模型耗时 100-300ms（遍历所有 mesh 累加 AABB）。同一 URL 实例化出的 model 包围盒固定，按 URL 缓存：
@@ -177,6 +263,71 @@ if (!size) {
 - 模型素材：`120ms`（给上一次 GPU 上传留缓冲）
 
 `_pendingDisplayAssets` 长度上限 `maxNewNodeCount * 2`，防止滚动批量产生时队列爆涨。
+
+### 3.7 三种场景的决策路径
+
+> 同一段 `_placeModelAsset` 代码，根据 URL 是否在缓存中、prefetch 是否完成，会走完全不同的快慢路径。
+
+```mermaid
+flowchart TD
+    Start([_placeModelAsset 被调用]) --> Q1{该 URL 的<br/>Promise 已存在?}
+
+    Q1 -- 否 --> Cold[场景①: 完全冷启动<br/>━━━━━━━<br/>新建 Promise<br/>scene.assets.loadAsset 真实下载<br/>~400-700ms]
+    Q1 -- 是·进行中 --> Warm[场景②: prefetch 进行中<br/>━━━━━━━<br/>await 共享 Promise<br/>等下载完成<br/>剩余 0-300ms]
+    Q1 -- 是·已resolve --> Hot[场景③: 完全命中<br/>━━━━━━━<br/>await 立即 resolve<br/>microtask ~1ms]
+
+    Cold --> Y1[await yieldFrame]
+    Warm --> Y1
+    Hot --> Y1
+
+    Y1 --> SetData[setData model<br/>GPU 实例化 ~100-150ms]
+    SetData --> Y2[await yieldFrame]
+
+    Y2 --> Q2{包围盒缓存<br/>__urlToBoundSize<br/>有该 URL?}
+    Q2 -- 否 --> Calc[calcTotalBoundBox<br/>遍历 mesh ~100-300ms<br/>结果写入缓存]
+    Q2 -- 是 --> Hit[直接读缓存 ~0ms]
+
+    Calc --> Done([放置完成])
+    Hit --> Done
+
+    style Cold fill:#fee
+    style Warm fill:#ffd
+    style Hot fill:#dfd
+    style Hit fill:#dfd
+    style Calc fill:#ffd
+```
+
+| 场景 | 典型耗时 | 触发条件 |
+| --- | --- | --- |
+| ① 完全冷启动 | 700-1200ms（被切成 3 段） | 该 URL 从未出现过 |
+| ② Prefetch 进行中 | 200-500ms | 一批 asset 中较早被串行队列处理到的 |
+| ③ 完全命中 | 100-200ms（仅 GPU 实例化） | 同 URL 在场景中已放过；或 prefetch 早就完成 |
+
+```mermaid
+flowchart LR
+    subgraph 时间窗口
+      A["displayAssets([X,Y,Z,X])"] --> B["同步: 4 个 prefetch 并发启动"]
+      B --> C1["队列: 放置 X #1"]
+      C1 --> C2["队列: 放置 Y"]
+      C2 --> C3["队列: 放置 Z"]
+      C3 --> C4["队列: 放置 X #2"]
+    end
+
+    B -.-> N1[("后台并行<br/>下载 X")]
+    B -.-> N2[("后台并行<br/>下载 Y")]
+    B -.-> N3[("后台并行<br/>下载 Z")]
+
+    N1 -.命中.-> C1
+    N2 -.命中.-> C2
+    N3 -.命中.-> C3
+    C1 -.同URL复用.-> C4
+
+    style N1 fill:#dfd
+    style N2 fill:#dfd
+    style N3 fill:#dfd
+```
+
+**关键观察**：网络下载与串行放置**重叠**。串行队列正在处理 X 的 setData 时，Y 和 Z 已在后台下载。等队列轮到 Y，Y 多半下载完了，直接进入 GPU 阶段。这就是 prefetch 的核心收益——把"下载等待"从串行长尾里抠出来塞进并行窗口。
 
 ---
 
