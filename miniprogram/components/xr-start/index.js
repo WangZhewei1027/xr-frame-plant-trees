@@ -186,8 +186,10 @@ Component({
 
     handleAssetsLoaded() {
       this.scene.event.addOnce("touchstart", this.placeNode.bind(this));
-      // 资源加载完成后启动随机彩带（依赖 particle-confetti 纹理）
-      this.startRandomConfetti();
+      // 资源加载完成后，仅在组织开启彩带配置时启动（依赖 particle-confetti 纹理）
+      if (this._orgConfig && this._orgConfig.confetti_enabled) {
+        this.startRandomConfetti();
+      }
     },
 
     handleAssetsProgress() {},
@@ -244,7 +246,7 @@ Component({
       try {
         const { statusCode, data } = await supabaseGet(
           "organization",
-          `id=eq.${orgId}&select=text_asset_miniapp_style`,
+          `id=eq.${orgId}&select=text_asset_miniapp_style,config`,
         );
         if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
           const style = data[0].text_asset_miniapp_style;
@@ -256,6 +258,9 @@ Component({
               console.error("[orgStyle] Storage write failed", e);
             }
           }
+          const cfg = data[0].config;
+          this._orgConfig = cfg && typeof cfg === "object" ? cfg : {};
+          console.log("[orgStyle] config:", JSON.stringify(this._orgConfig));
         }
       } catch (e) {
         console.error("[orgStyle] fetch failed", e);
