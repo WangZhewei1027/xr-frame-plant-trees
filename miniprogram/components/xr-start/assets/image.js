@@ -9,14 +9,6 @@ module.exports = {
     const camTransform = this.getCamTransform();
     if (!scene || !camTransform || !asset.file_url) return;
 
-    // 异步加载前记录相机位置，避免加载完成后位置漂移
-    const camPos = camTransform.position;
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 0.8 + Math.random() * 1.0;
-    const x = camPos.x + Math.cos(angle) * radius;
-    const z = camPos.z + Math.sin(angle) * radius;
-    const y = camPos.y + (Math.random() - 0.5) * 0.4;
-
     try {
       // 立即递增并快照，防止并发调用共享同一 assetId（竞态导致纹理缓存错乱）
       const nodeId = this.nodeIdCounter++;
@@ -65,6 +57,13 @@ module.exports = {
         `[image] nodeId=${nodeId}, rotated90=${rotated90}, effective size=${imgW}x${imgH}, aspect=${(imgW / imgH).toFixed(3)}`,
       );
       const targetH = 0.6; // 目标高度 0.6m
+
+      // 加载完成后取当前相机位置，确保素材落在用户前方而非身后
+      const pos = this._calcForwardPos("image");
+      if (!pos) return;
+      const x = pos.x;
+      const z = pos.z;
+      const y = pos.y + (Math.random() - 0.5) * 0.4;
 
       const rootNode = scene.createElement(xr.XRNode, {
         id: `image-node-${nodeId}`,

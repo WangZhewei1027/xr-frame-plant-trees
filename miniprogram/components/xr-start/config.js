@@ -21,6 +21,17 @@ const XR_CONFIG = {
   // repulsionStrength : 每帧最大位移量，值越大节点分散越快。
   repulsionRadius: 1.5,
   repulsionStrength: 0.008,
+  // 素材放置参数：控制各类型素材在相机前方的散布方式
+  // placeForwardArcDeg : 前向扇形两侧各展开的半角（度），30 = 前方 60° 覆盖（正前方 ±30°）
+  // placeRadius        : 各类型的最小/最大放置半径（米），在此统一调整
+  placeForwardArcDeg: 30,
+  placeRadius: {
+    text: { min: 1.5, max: 5.0 },
+    image: { min: 1.5, max: 5.0 },
+    model: { min: 1.5, max: 5.0 },
+    audio: { min: 1.5, max: 5.0 },
+    video: { min: 1.5, max: 5.0 },
+  },
   treeModelUrl: "https://8thwall.8thwall.app/assets/tree-d51u9146bh.glb",
 };
 

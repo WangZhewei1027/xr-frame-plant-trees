@@ -9,7 +9,7 @@ applyTo: "miniprogram/**/*.{js,ts,wxml}"
 
 ## 坐标系约定（右手系，+Y 朝上）
 
-- **+X 向右，+Y 向上，+Z 向后**（即摄像机的 forward 是 **−Z**，与 OpenGL 一致）。
+- **+X 向右，+Y 向上，+Z 向前**（相机 forward = **+Z**，与 Unity 一致）。
 - 重力方向 = 世界 −Y。
 - 抬起物体使其在地面之上：`position.y += 高度`（正值）。
 - 常见误区：把 +Y 当成向下会导致位移、重力、粒子方向全部反直觉。
@@ -20,10 +20,10 @@ applyTo: "miniprogram/**/*.{js,ts,wxml}"
   ```js
   const wm = camTransform.worldMatrix;
   const camForward = wm.transformDirection(
-    xr.Vector3.createFromNumber(0, 0, -1),
+    xr.Vector3.createFromNumber(0, 0, 1),
   );
   ```
-- ⚠️ 之前用 `(0,0,1)` 得到的是 backward，会让"摄像机前方"的物体出现在背后。**正确是 `(0,0,-1)`**。
+- ⚠️ 用 `(0,0,-1)` 得到的是 backward，会让"摄像机前方"的物体出现在背后。**正确是 `(0,0,1)`**。
 - 水平方向只取 `x,z` 并归一化，避免抬头/低头时投影偏移。
 - 水平右向（与世界上轴叉乘）：`right = (fz, 0, -fx)`。
 

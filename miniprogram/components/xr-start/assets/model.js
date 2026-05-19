@@ -6,14 +6,6 @@ module.exports = {
     const camTransform = this.getCamTransform();
     if (!scene || !camTransform || !asset.file_url) return;
 
-    // 在异步加载之前先记录当前相机世界坐标，避免加载完成后位置已漂移
-    const camPos = camTransform.position;
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 1.0 + Math.random() * 1.5;
-    const x = camPos.x + Math.cos(angle) * radius;
-    const z = camPos.z + Math.sin(angle) * radius;
-    const y = camPos.y;
-
     try {
       const assetId = `model-asset-${this.nodeIdCounter}`;
       console.log(`[model] 开始加载 assetId=${assetId} url=${asset.file_url}`);
@@ -23,6 +15,11 @@ module.exports = {
         src: asset.file_url,
       });
       console.log(`[model] 加载完成 assetId=${assetId} model=`, model);
+
+      // 加载完成后取当前相机位置，确保素材落在用户前方而非身后
+      const pos = this._calcForwardPos("model");
+      if (!pos) return;
+      const { x, y, z } = pos;
 
       // 先把节点加入场景，再通过 Transform API 设置世界坐标，
       // 避免 createElement 字符串属性在 AR 模式下被清空或变为摄像机相对坐标

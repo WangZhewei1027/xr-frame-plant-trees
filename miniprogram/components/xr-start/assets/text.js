@@ -6,12 +6,11 @@ module.exports = {
     const camTransform = this.getCamTransform();
     if (!scene || !camTransform) return;
 
-    const camPos = camTransform.position;
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 0.8 + Math.random() * 0.7;
-    const x = camPos.x + Math.cos(angle) * radius;
-    const z = camPos.z + Math.sin(angle) * radius;
-    const y = camPos.y + (Math.random() - 0.5) * 0.6;
+    const pos = this._calcForwardPos("text");
+    if (!pos) return;
+    const x = pos.x;
+    const z = pos.z;
+    const y = pos.y + (Math.random() - 0.5) * 0.6;
 
     const rootNode = scene.createElement(xr.XRNode, {
       id: `label-node-${this.nodeIdCounter++}`,

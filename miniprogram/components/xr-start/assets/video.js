@@ -30,14 +30,6 @@ module.exports = {
     const loop = meta.loop !== false;
     const autoPlay = meta.autoPlay !== false;
 
-    // 异步加载前记录相机位置，避免加载完成后位置漂移
-    const camPos = camTransform.position;
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 1.2 + Math.random() * 1.5;
-    const x = camPos.x + Math.cos(angle) * radius;
-    const z = camPos.z + Math.sin(angle) * radius;
-    const y = camPos.y;
-
     try {
       const nodeId = this.nodeIdCounter++;
       const videoAssetId = `video-tbb-${nodeId}`;
@@ -60,6 +52,11 @@ module.exports = {
         u_videoMap: videoTexture.texture,
       });
       scene.assets.addAsset("material", matAssetId, videoMat);
+
+      // 加载完成后取当前相机位置，确保素材落在用户前方而非身后
+      const pos = this._calcForwardPos("video");
+      if (!pos) return;
+      const { x, y, z } = pos;
 
       // 3. 计算显示宽高比
       //    metadata.width/height 为内容（上半区）尺寸，不包含下半 Alpha 区；默认 16:9

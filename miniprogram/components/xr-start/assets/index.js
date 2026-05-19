@@ -125,6 +125,37 @@ module.exports = function (XR_CONFIG) {
       this._placingBusy = false;
     },
 
+    /**
+     * 计算素材在相机正前方扇形区域内的随机放置坐标。
+     * 在 await 之后调用，使用加载完成时的相机状态，避免素材出现在身后。
+     * 半径区间和前向弧角均从 XR_CONFIG 读取，集中在 config.js 调整。
+     *
+     * @param {'text'|'image'|'model'|'audio'|'video'} type  素材类型
+     * @returns {{ x: number, y: number, z: number } | null}
+     */
+    _calcForwardPos(type) {
+      const xr = wx.getXrFrameSystem();
+      const camTransform = this.getCamTransform();
+      if (!camTransform) return null;
+      const camPos = camTransform.position;
+      // XR-Frame 坐标系：相机 local forward = (0,0,1)（+Z 朝前，Unity 约定）
+      const wm = camTransform.worldMatrix;
+      const localFwd = xr.Vector3.createFromNumber(0, 0, 1);
+      const fwd = wm.transformDirection(localFwd);
+      // atan2(z, x) → 以 +X 轴为 0° 的朝向角，与 cos/sin 放置约定匹配
+      const camYaw = Math.atan2(fwd.z, fwd.x);
+      const halfArc = ((XR_CONFIG.placeForwardArcDeg || 120) * Math.PI) / 180;
+      const angle = camYaw + (Math.random() - 0.5) * 2 * halfArc;
+      const { min: rMin, max: rMax } = (XR_CONFIG.placeRadius &&
+        XR_CONFIG.placeRadius[type]) || { min: 1.0, max: 2.0 };
+      const radius = rMin + Math.random() * (rMax - rMin);
+      return {
+        x: camPos.x + Math.cos(angle) * radius,
+        y: camPos.y,
+        z: camPos.z + Math.sin(angle) * radius,
+      };
+    },
+
     /** 按 file_type 分发到对应的放置方法 */
     async _placeAsset(asset) {
       if (asset.file_type === "model") await this._placeModelAsset(asset);

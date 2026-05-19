@@ -47,13 +47,12 @@ module.exports = function (XR_CONFIG) {
         },
       });
 
-      // 在相机附近随机放置耳机模型，表示音频源的 AR 空间位置
-      const camPos = camTransform.position;
-      const angle = Math.random() * Math.PI * 2;
-      const radius = 1.5 + Math.random() * 2.0;
-      const srcX = camPos.x + Math.cos(angle) * radius;
-      const srcZ = camPos.z + Math.sin(angle) * radius;
-      const srcY = camPos.y;
+      // 在相机前方随机放置耳机模型，表示音频源的 AR 空间位置
+      const audioPos = this._calcForwardPos("audio");
+      if (!audioPos) return;
+      const srcX = audioPos.x;
+      const srcZ = audioPos.z;
+      const srcY = audioPos.y;
 
       try {
         const nodeId = this.nodeIdCounter++;
