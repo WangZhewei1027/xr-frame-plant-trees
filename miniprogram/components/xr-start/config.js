@@ -15,7 +15,8 @@ const XR_CONFIG = {
   fetchCooldownMs: 3000,
   // 一批素材放置时，每个 asset 之间的错开间隔（毫秒）。
   // 避免一次性 createElement/addChild/loadAsset 全部堆在同一帧导致卡顿。
-  placeStaggerMs: 80,
+  // 40ms ≈ 2.5 帧，足够让一帧渲染完成、又能让一批 10 个素材在 ~0.4s 内显完。
+  placeStaggerMs: 40,
   // 斥力参数：nodeList 中所有已落位素材节点（文本/模型/图片/音频/视频/弹幕）之间的互斥推力。
   // repulsionRadius   : 斥力开始生效的距离（米），节点间距小于此值才会被推开。
   // repulsionStrength : 每帧最大位移量，值越大节点分散越快。

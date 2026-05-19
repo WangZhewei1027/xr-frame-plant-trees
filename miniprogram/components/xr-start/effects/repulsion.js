@@ -38,23 +38,29 @@ module.exports = function (XR_CONFIG) {
 
       // 先累加每个节点受到的合力位移，再统一应用，避免顺序偏差
       const offsets = settled.map(() => ({ x: 0, y: 0, z: 0 }));
+      const RADIUS_SQ = REPULSION_RADIUS * REPULSION_RADIUS;
 
       for (let i = 0; i < settled.length; i++) {
+        const a = settled[i];
         for (let j = i + 1; j < settled.length; j++) {
-          const a = settled[i];
           const b = settled[j];
           const dx = a.x - b.x;
+          // AABB 单轴早剔除：单个坐标差已超半径则不可能在球内，省掉后续乘法和 sqrt
+          if (dx > REPULSION_RADIUS || dx < -REPULSION_RADIUS) continue;
           const dy = a.y - b.y;
+          if (dy > REPULSION_RADIUS || dy < -REPULSION_RADIUS) continue;
           const dz = a.z - b.z;
-          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-          if (dist >= REPULSION_RADIUS || dist < MIN_DIST) continue;
+          if (dz > REPULSION_RADIUS || dz < -REPULSION_RADIUS) continue;
+          const distSq = dx * dx + dy * dy + dz * dz;
+          if (distSq >= RADIUS_SQ || distSq < MIN_DIST * MIN_DIST) continue;
+          const dist = Math.sqrt(distSq);
 
           // 强度随距离线性衰减
           const force = REPULSION_STRENGTH * (1 - dist / REPULSION_RADIUS);
-          const nx = dx / dist;
-          const ny = dy / dist;
-          const nz = dz / dist;
+          const inv = 1 / dist;
+          const nx = dx * inv;
+          const ny = dy * inv;
+          const nz = dz * inv;
 
           offsets[i].x += nx * force;
           offsets[i].y += ny * force;

@@ -3,6 +3,30 @@
  * 字段：file_url（音频 URL），metadata.loop（是否循环，默认 true），
  *       metadata.volume（音量 0-1，默认 1）
  */
+
+// 共享耳机 GLB 的加载 Promise：xr-frame 用同一 assetId 重复调用 loadAsset 时
+// 不返回 { value: model } 包装，必须缓存首次解析得到的裸 model 复用。
+let __headphoneModelPromise = null;
+function __getHeadphoneModel(scene) {
+  if (__headphoneModelPromise) return __headphoneModelPromise;
+  __headphoneModelPromise = scene.assets
+    .loadAsset({
+      type: "gltf",
+      assetId: "audio-headphone-shared",
+      src: "/assets/headphone.glb",
+    })
+    .then((res) => {
+      const model = res && res.value ? res.value : res;
+      if (!model) throw new Error("[audio] headphone.glb load returned empty");
+      return model;
+    })
+    .catch((err) => {
+      __headphoneModelPromise = null;
+      throw err;
+    });
+  return __headphoneModelPromise;
+}
+
 module.exports = function (XR_CONFIG) {
   return {
     async _placeAudioAsset(asset) {
@@ -28,24 +52,60 @@ module.exports = function (XR_CONFIG) {
         ? asset.file_url.slice(0, -5) + ".m4a"
         : asset.file_url;
 
-      wx.downloadFile({
-        url: audioUrl,
-        success: (res) => {
-          if (res.statusCode === 200) {
-            ctx.src = res.tempFilePath;
-            ctx.play();
-          } else {
-            console.error(
-              "[audio] 下载失败 statusCode:",
-              res.statusCode,
-              audioUrl,
-            );
-          }
-        },
-        fail: (err) => {
-          console.error("[audio] 下载失败:", audioUrl, err);
-        },
-      });
+      // 持久化缓存：相同 URL 的音频只下载一次，重复放置时直接复用本地 savedFilePath。
+      // wx.downloadFile 返回的 tempFilePath 在小程序重启后会被清理，所以用 saveFile 落到
+      // 用户文件目录（wxfile://usr/...），key 在 Storage 中映射 URL → savedFilePath。
+      const cacheKey = `audio:saved:${audioUrl}`;
+      const fs = wx.getFileSystemManager();
+      const playFromPath = (p) => {
+        ctx.src = p;
+        ctx.play();
+      };
+      let cachedPath = "";
+      try {
+        cachedPath = wx.getStorageSync(cacheKey) || "";
+      } catch (_) {}
+      if (cachedPath) {
+        // 校验本地文件仍然存在（用户可能清空了缓存目录）
+        try {
+          fs.accessSync(cachedPath);
+          playFromPath(cachedPath);
+        } catch (_) {
+          cachedPath = "";
+          try {
+            wx.removeStorageSync(cacheKey);
+          } catch (_) {}
+        }
+      }
+      if (!cachedPath) {
+        wx.downloadFile({
+          url: audioUrl,
+          success: (res) => {
+            if (res.statusCode === 200) {
+              // 先用 tempFilePath 立即播放，再异步 saveFile 持久化
+              playFromPath(res.tempFilePath);
+              wx.saveFile({
+                tempFilePath: res.tempFilePath,
+                success: (saveRes) => {
+                  try {
+                    wx.setStorageSync(cacheKey, saveRes.savedFilePath);
+                  } catch (_) {}
+                },
+                fail: () => {}, // saveFile 失败不影响当前播放
+              });
+            } else {
+              console.error(
+                "[audio] 下载失败 statusCode:",
+                res.statusCode,
+                audioUrl,
+              );
+            }
+          },
+          fail: (err) => {
+            console.error("[audio] 下载失败:", audioUrl, err);
+          },
+        });
+      }
 
       // 在相机前方随机放置耳机模型，表示音频源的 AR 空间位置
       const audioPos = this._calcForwardPos("audio");
@@ -56,12 +116,11 @@ module.exports = function (XR_CONFIG) {
 
       try {
         const nodeId = this.nodeIdCounter++;
-        const glbAssetId = `audio-headphone-${nodeId}`;
-        const { value: model } = await scene.assets.loadAsset({
-          type: "gltf",
-          assetId: glbAssetId,
-          src: "/assets/headphone.glb",
-        });
+        // 共享 Promise：耳机 GLB 只解析一次，后续音频复用 model 实例。
+        const model = await __getHeadphoneModel(scene);
+
+        // 让一帧后再做 createElement + setData，把 GPU 上传从音频回调链中剥离
+        await new Promise((r) => setTimeout(r, 0));
 
         const rootNode = scene.createElement(xr.XRNode, {
           id: `audio-node-${nodeId}`,
@@ -139,11 +198,29 @@ module.exports = function (XR_CONFIG) {
       const camTransform = this.getCamTransform();
       if (!camTransform) return;
       const camPos = camTransform.worldPosition;
+
+      // 相机静止时（位移 < 5cm 且距上次更新 < 500ms）跳过，避免无意义的 pow() 计算
+      const lastCam = this._lastAudioVolumeCam;
+      const lastTime = this._lastAudioVolumeTime || 0;
+      const now = Date.now();
+      if (
+        lastCam &&
+        Math.abs(camPos.x - lastCam.x) < 0.05 &&
+        Math.abs(camPos.y - lastCam.y) < 0.05 &&
+        Math.abs(camPos.z - lastCam.z) < 0.05 &&
+        now - lastTime < 500
+      ) {
+        return;
+      }
+      this._lastAudioVolumeCam = { x: camPos.x, y: camPos.y, z: camPos.z };
+      this._lastAudioVolumeTime = now;
+
       const refDist = 1.0;
       const cutoffDist = XR_CONFIG.maxDistanceMeters || 20;
       const focusDist = 0.3;
 
       const audioEntries = this.nodeList.filter((e) => e.audioRefs);
+      if (audioEntries.length === 0) return;
 
       // 第一遍：计算各音源距离，找出是否有处于焦点范围内的音源（取最近的）
       let focusedEntry = null;

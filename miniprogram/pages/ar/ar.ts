@@ -38,8 +38,41 @@ Page({
       renderHeight: height * dpi,
     });
     this.getLocation();
-    // 持续定位
-    (this as any)._locationTimer = setInterval(() => this.getLocation(), 5000);
+    // 持续定位：使用 startLocationUpdate + onLocationChange，被动接收 GPS 更新，
+    // 比 setInterval(getLocation, 5000) 更省电、回调更新更平滑（不会与 XR 渲染帧争用主线程）
+    if (wx.startLocationUpdate) {
+      wx.startLocationUpdate({
+        success: () => {
+          (this as any)._locationListener = (
+            res: WechatMiniprogram.OnLocationChangeCallbackResult,
+          ) => {
+            this.setData({
+              location: {
+                latitude: res.latitude,
+                longitude: res.longitude,
+                altitude: (res as any).altitude ?? 0,
+                latStr: res.latitude.toFixed(6),
+                lngStr: res.longitude.toFixed(6),
+              },
+              canSubmit: this.data.textContent.trim().length > 0,
+            });
+          };
+          wx.onLocationChange((this as any)._locationListener);
+        },
+        // 失败时退化为低频轮询（10s 一次，足够标记位置使用，且不阻塞渲染）
+        fail: () => {
+          (this as any)._locationTimer = setInterval(
+            () => this.getLocation(),
+            10000,
+          );
+        },
+      });
+    } else {
+      (this as any)._locationTimer = setInterval(
+        () => this.getLocation(),
+        10000,
+      );
+    }
     // 罗盘订阅
     this._startCompassWatch();
   },
@@ -48,6 +81,17 @@ Page({
     if ((this as any)._locationTimer) {
       clearInterval((this as any)._locationTimer);
       (this as any)._locationTimer = null;
+    }
+    if ((this as any)._locationListener && wx.offLocationChange) {
+      try {
+        wx.offLocationChange((this as any)._locationListener);
+      } catch (_) {}
+      (this as any)._locationListener = null;
+    }
+    if (wx.stopLocationUpdate) {
+      try {
+        wx.stopLocationUpdate();
+      } catch (_) {}
     }
     this._stopCompassWatch();
   },

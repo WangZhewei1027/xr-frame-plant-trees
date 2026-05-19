@@ -15,14 +15,33 @@ module.exports = {
       const assetId = `image-tex-${nodeId}`;
 
       // 并行：获取图片实际尺寸 + 加载纹理资源
-      const [imgInfo] = await Promise.all([
-        new Promise((resolve) => {
-          wx.getImageInfo({
-            src: asset.file_url,
-            success: resolve,
-            fail: () => resolve({ width: 1, height: 1 }),
+      // 图片尺寸通过 Storage 持久化缓存（按 URL 索引），避免重复 getImageInfo（每次 100-300ms）。
+      const dimCacheKey = `imgInfo:dim:${asset.file_url}`;
+      let cachedDim = null;
+      try {
+        cachedDim = wx.getStorageSync(dimCacheKey) || null;
+      } catch (_) {}
+      const dimPromise = cachedDim
+        ? Promise.resolve(cachedDim)
+        : new Promise((resolve) => {
+            wx.getImageInfo({
+              src: asset.file_url,
+              success: (info) => {
+                try {
+                  wx.setStorageSync(dimCacheKey, {
+                    width: info.width,
+                    height: info.height,
+                    orientation: info.orientation,
+                  });
+                } catch (_) {}
+                resolve(info);
+              },
+              fail: () => resolve({ width: 1, height: 1 }),
+            });
           });
-        }),
+
+      const [imgInfo] = await Promise.all([
+        dimPromise,
         scene.assets.loadAsset({
           type: "texture",
           assetId,

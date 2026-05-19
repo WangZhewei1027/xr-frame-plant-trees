@@ -18,29 +18,43 @@ Page({
 
   async fetchNames() {
     try {
-      // 获取 organization 名称
-      if (CONFIG.organizationId) {
-        const { statusCode, data } = await supabaseGet<{ name: string }[]>(
-          "organization",
-          `id=eq.${CONFIG.organizationId}&select=name&limit=1`,
-        );
-        if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
-          this.setData({ title: data[0].name });
-        }
+      // 并行拉取 organization / workspace 名称，避免串行 await 阻塞首屏渲染
+      const orgPromise = CONFIG.organizationId
+        ? supabaseGet<{ name: string }[]>(
+            "organization",
+            `id=eq.${CONFIG.organizationId}&select=name&limit=1`,
+          ).catch(() => null)
+        : Promise.resolve(null);
+      const wsPromise = CONFIG.workspaceId
+        ? supabaseGet<{ name: string }[]>(
+            "workspace",
+            `id=eq.${CONFIG.workspaceId}&select=name&limit=1`,
+          ).catch(() => null)
+        : Promise.resolve(null);
+
+      const [orgRes, wsRes] = await Promise.all([orgPromise, wsPromise]);
+
+      const patch: Record<string, string> = {};
+      if (
+        orgRes &&
+        orgRes.statusCode === 200 &&
+        Array.isArray(orgRes.data) &&
+        orgRes.data.length > 0
+      ) {
+        patch.title = orgRes.data[0].name;
       }
-      // 获取 workspace 名称
-      if (CONFIG.workspaceId) {
-        const { statusCode, data } = await supabaseGet<{ name: string }[]>(
-          "workspace",
-          `id=eq.${CONFIG.workspaceId}&select=name&limit=1`,
-        );
-        if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
-          this.setData({ subtitle: data[0].name });
-        }
+      if (
+        wsRes &&
+        wsRes.statusCode === 200 &&
+        Array.isArray(wsRes.data) &&
+        wsRes.data.length > 0
+      ) {
+        patch.subtitle = wsRes.data[0].name;
       }
+      // 单次 setData 批量更新，减少 WXML diff
+      this.setData({ ...patch, loaded: true });
     } catch (err) {
       console.error("[index] fetchNames error:", err);
-    } finally {
       this.setData({ loaded: true });
     }
   },

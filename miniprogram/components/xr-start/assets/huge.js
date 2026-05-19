@@ -4,6 +4,34 @@ const { CONFIG, supabaseRpc } = require("../../../utils/supabase");
  * 巨型远景模型：从 asset 表查询 is_huge=true 的 model，
  * 用 GPS + 罗盘估算方位，放置在远处；用户靠近时消失。
  */
+
+// URL → Promise<model>：相同 GLB 只让 xr-frame 解析一次，重复放置直接复用。
+// 必须用 Promise 缓存而非依赖 assetId 重复 loadAsset，因为 xr-frame 二次调用
+// 不返回 { value: model } 包装，会让 const { value } = ... 解构到 undefined。
+const __hugeUrlToPromise = new Map();
+function __getHugeModel(scene, url) {
+  let p = __hugeUrlToPromise.get(url);
+  if (p) return p;
+  let h = 5381;
+  for (let i = 0; i < url.length; i++) {
+    h = ((h << 5) + h + url.charCodeAt(i)) | 0;
+  }
+  const aid = `huge-model-asset-${(h >>> 0).toString(36)}`;
+  p = scene.assets
+    .loadAsset({ type: "gltf", assetId: aid, src: url })
+    .then((res) => {
+      const model = res && res.value ? res.value : res;
+      if (!model) throw new Error(`[huge] loadAsset returned empty for ${url}`);
+      return model;
+    })
+    .catch((err) => {
+      __hugeUrlToPromise.delete(url);
+      throw err;
+    });
+  __hugeUrlToPromise.set(url, p);
+  return p;
+}
+
 module.exports = function (XR_CONFIG) {
   const HUGE_DISPLAY_DISTANCE = 100; // XR 世界中最大放置距离（米）
   const HUGE_MODEL_SCALE = 15; // normalize 后的放大倍数
@@ -90,9 +118,30 @@ module.exports = function (XR_CONFIG) {
         }
       }
 
-      for (const asset of toPlace) {
-        this._placeHugeModel(asset);
+      // 串行放置：huge GLB 通常体积较大（几 MB ~ 几十 MB），并发下载/解析会让网络和
+      // 主线程瞬间饱和，造成长时间掉帧。改为逐个 await，相邻之间给一个空闲窗口。
+      this._enqueueHugePlace(toPlace);
+    },
+
+    _enqueueHugePlace(assets) {
+      if (!this._hugePlaceQueue) this._hugePlaceQueue = [];
+      for (const a of assets) this._hugePlaceQueue.push(a);
+      if (!this._hugePlacingBusy) this._drainHugePlaceQueue();
+    },
+
+    async _drainHugePlaceQueue() {
+      this._hugePlacingBusy = true;
+      const stagger = XR_CONFIG.placeStaggerMs || 40;
+      while (this._hugePlaceQueue && this._hugePlaceQueue.length > 0) {
+        const asset = this._hugePlaceQueue.shift();
+        try {
+          await this._placeHugeModel(asset);
+        } catch (e) {
+          console.warn("[huge] place error:", e);
+        }
+        await new Promise((r) => setTimeout(r, stagger));
       }
+      this._hugePlacingBusy = false;
     },
 
     /**
@@ -150,12 +199,11 @@ module.exports = function (XR_CONFIG) {
 
       try {
         const nodeId = this.nodeIdCounter++;
-        const gltfAssetId = `huge-model-asset-${nodeId}`;
-        const { value: model } = await scene.assets.loadAsset({
-          type: "gltf",
-          assetId: gltfAssetId,
-          src: asset.file_url,
-        });
+        // 共享 Promise：同 URL 只解析一次（即使是几十 MB 的巨型 GLB）
+        const model = await __getHugeModel(scene, asset.file_url);
+
+        // 让一帧再做场景实例化，把网络回调与 GPU 上传切开
+        await new Promise((r) => setTimeout(r, 0));
 
         const rootNode = scene.createElement(xr.XRNode, {
           id: `huge-model-node-${nodeId}`,
@@ -171,6 +219,9 @@ module.exports = function (XR_CONFIG) {
         const gltfComp = gltfEl.getComponent(xr.GLTF);
         gltfComp.setData({ model });
         rootNode.addChild(gltfEl);
+
+        // setData 引发 GPU 上传，让出一帧再算包围盒
+        await new Promise((r) => setTimeout(r, 0));
 
         // 先 normalize 最长边到 1m，再乘以放大倍数
         const boundBox = gltfComp.calcTotalBoundBox();

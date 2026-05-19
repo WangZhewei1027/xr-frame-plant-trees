@@ -69,9 +69,12 @@ module.exports = function (XR_CONFIG) {
     displayAssets(assets) {
       // 预加载（scene + 头像/气泡纹理）未就绪时，先暂存，等 flushPendingDisplayAssets 调用
       if (!this._preloadDone) {
-        this._pendingDisplayAssets = (this._pendingDisplayAssets || []).concat(
-          assets,
-        );
+        const merged = (this._pendingDisplayAssets || []).concat(assets);
+        // 限制暂存上限：用户在预加载期间快速移动可能触发多次 fetch，
+        // 累积过多 asset 会让 preload 完成后串行放置队列工作数秒。仅保留最新一批最相关的。
+        const MAX_PENDING = (XR_CONFIG.maxNewNodeCount || 10) * 2;
+        this._pendingDisplayAssets =
+          merged.length > MAX_PENDING ? merged.slice(-MAX_PENDING) : merged;
         return;
       }
 
@@ -110,16 +113,33 @@ module.exports = function (XR_CONFIG) {
     _enqueueDisplayAssets(assets) {
       if (!this._placeQueue) this._placeQueue = [];
       for (const a of assets) this._placeQueue.push(a);
+
+      // 关键优化：一拿到 model 类型 asset 就立刻并行 prefetch GLB 下载（不实例化）。
+      // 串行放置每次 await loadAsset 时，网络阶段已被 prefetch 完成，可直接命中
+      // xr-frame asset 缓存，避免"放置完一个 → 等下一个网络往返"的串行长尾。
+      if (this.scene && this._prefetchModelAsset) {
+        for (const a of assets) {
+          if (a.file_type === "model" && a.file_url) {
+            this._prefetchModelAsset(this.scene, a.file_url);
+          }
+        }
+      }
+
       if (!this._placingBusy) this._drainPlaceQueue();
     },
 
     async _drainPlaceQueue() {
       this._placingBusy = true;
-      const stagger = XR_CONFIG.placeStaggerMs || 80;
+      const baseStagger = XR_CONFIG.placeStaggerMs || 40;
       while (this._placeQueue && this._placeQueue.length > 0) {
         const asset = this._placeQueue.shift();
         await this._placeAsset(asset);
-        // 每个 asset 放置完后等一个空闲窗口，让渲染帧有机会执行
+        // 模型放置触发 GPU 资源上传，给主线程多一点喘息时间；
+        // 其他轻量类型（text/image/audio/video）用配置中的基础值即可。
+        const stagger =
+          asset.file_type === "model"
+            ? Math.max(baseStagger, 120)
+            : baseStagger;
         await new Promise((r) => setTimeout(r, stagger));
       }
       this._placingBusy = false;
