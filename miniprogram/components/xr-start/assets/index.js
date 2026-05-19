@@ -4,6 +4,7 @@ const createAudioMethods = require("./audio");
 const textMethods = require("./text");
 const modelMethods = require("./model");
 const imageMethods = require("./image");
+const videoMethods = require("./video");
 
 /**
  * 远程素材模块入口：fetch + display + 分发到具体类型放置器，
@@ -19,6 +20,7 @@ module.exports = function (XR_CONFIG) {
     ...modelMethods,
     ...imageMethods,
     ...audioMethods,
+    ...videoMethods,
 
     async fetchNearbyAssets() {
       if (this.isFetchingAssets || !this.currentGPS) return;
@@ -40,7 +42,8 @@ module.exports = function (XR_CONFIG) {
                 (a.file_type === "text" ||
                   a.file_type === "model" ||
                   a.file_type === "image" ||
-                  a.file_type === "audio") &&
+                  a.file_type === "audio" ||
+                  a.file_type === "video") &&
                 !a.is_huge,
             ),
           );
@@ -104,6 +107,7 @@ module.exports = function (XR_CONFIG) {
       else if (asset.file_type === "text") this._placeTextAsset(asset);
       else if (asset.file_type === "image") this._placeImageAsset(asset);
       else if (asset.file_type === "audio") this._placeAudioAsset(asset);
+      else if (asset.file_type === "video") this._placeVideoAsset(asset);
     },
   };
 };

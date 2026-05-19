@@ -20,6 +20,7 @@ module.exports = function (XR_CONFIG) {
         node,
         billboardEl,
         audioRefs: audioRefs || null,
+        videoRefs: (opts && opts.videoRefs) || null,
         gen,
       };
       this.nodeList.push(newEntry);
@@ -96,6 +97,15 @@ module.exports = function (XR_CONFIG) {
         } catch (_) {}
         try {
           entry.audioRefs.ctx.destroy();
+        } catch (_) {}
+      }
+      if (entry.videoRefs) {
+        const { scene, videoAssetId, matAssetId } = entry.videoRefs;
+        try {
+          scene.assets.releaseAsset("video-texture", videoAssetId);
+        } catch (_) {}
+        try {
+          scene.assets.releaseAsset("material", matAssetId);
         } catch (_) {}
       }
     },
