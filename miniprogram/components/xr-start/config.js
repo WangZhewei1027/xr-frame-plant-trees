@@ -13,6 +13,9 @@ const XR_CONFIG = {
   distanceThreshold: 5,
   // 两次拉取之间的最小间隔（毫秒），防止短时间内连续触发
   fetchCooldownMs: 3000,
+  // 一批素材放置时，每个 asset 之间的错开间隔（毫秒）。
+  // 避免一次性 createElement/addChild/loadAsset 全部堆在同一帧导致卡顿。
+  placeStaggerMs: 80,
   treeModelUrl: "https://8thwall.8thwall.app/assets/tree-d51u9146bh.glb",
 };
 

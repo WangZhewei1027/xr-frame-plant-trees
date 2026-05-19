@@ -87,8 +87,10 @@ module.exports = function (XR_CONFIG) {
       }
       const newAssets = assets.filter((a) => !cachedIds.has(a.id));
 
-      // 3. 放置新素材；_registerNode 会在插入后自动检查各队列的容量
-      newAssets.forEach((a) => this._placeAsset(a));
+      // 3. 串行放置：等上一个 asset 的异步操作完成后再开始下一个，
+      //    避免多个 loadAsset 回调在同一帧扎堆导致卡顿。
+      //    相邻两次放置之间额外插入 placeStaggerMs 的空闲窗口，让渲染帧喘气。
+      this._enqueueDisplayAssets(newAssets);
     },
 
     /** 预加载完成后由 index.js 调用，把暂存的 assets 一次性放置 */
@@ -101,13 +103,35 @@ module.exports = function (XR_CONFIG) {
       this.displayAssets(pending);
     },
 
+    /**
+     * 串行放置队列：把 assets 追加到内部队列，逐个 await 完成后再放下一个。
+     * 多次调用（如 GPS 触发的连续 fetch）会自然排队，不会并发爆发。
+     */
+    _enqueueDisplayAssets(assets) {
+      if (!this._placeQueue) this._placeQueue = [];
+      for (const a of assets) this._placeQueue.push(a);
+      if (!this._placingBusy) this._drainPlaceQueue();
+    },
+
+    async _drainPlaceQueue() {
+      this._placingBusy = true;
+      const stagger = XR_CONFIG.placeStaggerMs || 80;
+      while (this._placeQueue && this._placeQueue.length > 0) {
+        const asset = this._placeQueue.shift();
+        await this._placeAsset(asset);
+        // 每个 asset 放置完后等一个空闲窗口，让渲染帧有机会执行
+        await new Promise((r) => setTimeout(r, stagger));
+      }
+      this._placingBusy = false;
+    },
+
     /** 按 file_type 分发到对应的放置方法 */
-    _placeAsset(asset) {
-      if (asset.file_type === "model") this._placeModelAsset(asset);
+    async _placeAsset(asset) {
+      if (asset.file_type === "model") await this._placeModelAsset(asset);
       else if (asset.file_type === "text") this._placeTextAsset(asset);
-      else if (asset.file_type === "image") this._placeImageAsset(asset);
-      else if (asset.file_type === "audio") this._placeAudioAsset(asset);
-      else if (asset.file_type === "video") this._placeVideoAsset(asset);
+      else if (asset.file_type === "image") await this._placeImageAsset(asset);
+      else if (asset.file_type === "audio") await this._placeAudioAsset(asset);
+      else if (asset.file_type === "video") await this._placeVideoAsset(asset);
     },
   };
 };

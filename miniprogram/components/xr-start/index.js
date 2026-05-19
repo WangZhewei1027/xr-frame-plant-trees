@@ -76,6 +76,9 @@ Component({
       this.fetchOrgStyle();
     },
     detached() {
+      // 清空串行放置队列，防止组件销毁后残留 asset 继续执行
+      this._placeQueue = [];
+      this._placingBusy = false;
       if (this.locationWatchId) {
         wx.stopLocationUpdate();
         this.locationWatchId = null;
