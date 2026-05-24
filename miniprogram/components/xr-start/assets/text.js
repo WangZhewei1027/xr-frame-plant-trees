@@ -19,7 +19,11 @@ module.exports = {
     });
     this.shadowRoot.addChild(rootNode);
 
-    this._buildBubbleNodes(rootNode, asset.text_content || "无内容");
+    this._buildBubbleNodes(
+      rootNode,
+      asset.text_content || "无内容",
+      asset.config || null,
+    );
     // billboard 目标 = rootNode，让整个气泡结构朝向相机
     this._registerNode(asset.id, rootNode, rootNode);
   },

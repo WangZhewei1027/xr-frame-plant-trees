@@ -1,4 +1,21 @@
 /** 弹幕飞行动画：从相机后下方飞到正前方，微信聊天气泡样式 */
+
+/**
+ * 将十六进制颜色（如 #FF5500 或 #f55）转为 XR-Frame u_baseColorFactor 格式（R G B 1）
+ * @param {string} hex
+ * @returns {string}
+ */
+function _hexToRgbaFactor(hex) {
+  let h = hex.replace("#", "");
+  if (h.length === 3) {
+    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  }
+  const r = (parseInt(h.slice(0, 2), 16) / 255).toFixed(3);
+  const g = (parseInt(h.slice(2, 4), 16) / 255).toFixed(3);
+  const b = (parseInt(h.slice(4, 6), 16) / 255).toFixed(3);
+  return `${r} ${g} ${b} 1`;
+}
+
 module.exports = function (XR_CONFIG) {
   return {
     /**
@@ -6,19 +23,26 @@ module.exports = function (XR_CONFIG) {
      * 供 showDanmakuInXR 和 _placeTextAsset 共用。
      * @returns {Element} textEl 文字节点
      */
-    _buildBubbleNodes(rootNode, text) {
+    _buildBubbleNodes(rootNode, text, config) {
       const xr = wx.getXrFrameSystem();
       const scene = this.scene;
 
       // plain_white：严格无装饰，只显示纯白文字
+      // 此模式下读取 per-asset config 中的颜色和大小设置
       if (this._textAssetStyle === "plain_white") {
+        const colorFactor =
+          config && config.text_color
+            ? _hexToRgbaFactor(config.text_color)
+            : "1 1 1 1";
+        const fontSize =
+          config && config.text_size ? String(config.text_size) : "1.5";
         const textEl = scene.createElement(xr.XRText, {
           position: "0 0 0",
           value: text,
-          size: "1.5",
+          size: fontSize,
           anchor: "0.5 0.5",
           "never-cull": "",
-          uniforms: "u_baseColorFactor:1 1 1 1",
+          uniforms: `u_baseColorFactor:${colorFactor}`,
         });
         rootNode.addChild(textEl);
         return textEl;
