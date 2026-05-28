@@ -6,19 +6,22 @@
     width="{{renderWidth}}"
     height="{{renderHeight}}"
     style="width:{{width}}px;height:{{height}}px;"
+    bind:orgconfigload="onOrgConfigLoad"
   />
 
   <!-- ===== 底部区域 ===== -->
   <view class="bottom-area">
 
     <!-- 店铺打卡组件（导航覆层 + 打卡弹窗 + 店铺列表） -->
-    <shop-checkin
-      id="shop-checkin"
-      visible="{{showShopPanel}}"
-      location="{{location}}"
-      compass-heading="{{compassHeading}}"
-      bind:navchange="onShopNavChange"
-    />
+    <block wx:if="{{shopCheckinEnabled}}">
+      <shop-checkin
+        id="shop-checkin"
+        visible="{{showShopPanel}}"
+        location="{{location}}"
+        compass-heading="{{compassHeading}}"
+        bind:navchange="onShopNavChange"
+      />
+    </block>
 
     <!-- 弹幕输入栏（始终可见） -->
     <view class="danmaku-bar">
@@ -38,8 +41,8 @@
       >
         <image class="send-icon" src="/assets/send.svg" mode="aspectFit" />
       </view>
-      <view class="bar-divider"></view>
-      <view class="shop-toggle {{showShopPanel ? 'shop-toggle-on' : ''}}" bindtap="toggleShopPanel">
+      <view wx:if="{{shopCheckinEnabled}}" class="bar-divider"></view>
+      <view wx:if="{{shopCheckinEnabled}}" class="shop-toggle {{showShopPanel ? 'shop-toggle-on' : ''}}" bindtap="toggleShopPanel">
         <image class="shop-toggle-icon" src="/assets/circle-check-big.svg" mode="aspectFit" />
       </view>
     </view>

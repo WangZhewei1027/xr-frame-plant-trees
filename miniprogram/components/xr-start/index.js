@@ -272,10 +272,13 @@ Component({
       try {
         const { statusCode, data } = await supabaseGet(
           "organization",
-          `id=eq.${orgId}&select=text_asset_miniapp_style,config`,
+          `id=eq.${orgId}&select=config`,
         );
         if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
-          const style = data[0].text_asset_miniapp_style;
+          const cfg = data[0].config;
+          this._orgConfig = cfg && typeof cfg === "object" ? cfg : {};
+          console.log("[orgStyle] config:", JSON.stringify(this._orgConfig));
+          const style = this._orgConfig.text_asset_miniapp_style;
           if (typeof style === "string" && style) {
             this._textAssetStyle = style;
             try {
@@ -284,9 +287,9 @@ Component({
               console.error("[orgStyle] Storage write failed", e);
             }
           }
-          const cfg = data[0].config;
-          this._orgConfig = cfg && typeof cfg === "object" ? cfg : {};
-          console.log("[orgStyle] config:", JSON.stringify(this._orgConfig));
+          this.triggerEvent("orgconfigload", {
+            shopCheckinEnabled: !!this._orgConfig.shop_checkin_enabled,
+          });
         }
       } catch (e) {
         console.error("[orgStyle] fetch failed", e);
