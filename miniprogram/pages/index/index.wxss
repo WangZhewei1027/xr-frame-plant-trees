@@ -117,9 +117,7 @@
   padding-bottom: 40rpx;
 }
 
-.footer text {
-  font-size: 20rpx;
-  color: #444444;
-  letter-spacing: 4rpx;
-  text-transform: uppercase;
+.footer-logo {
+  width: 500rpx;
+  height: 500rpx;
 }

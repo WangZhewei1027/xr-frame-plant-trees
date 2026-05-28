@@ -289,6 +289,7 @@ Component({
           }
           this.triggerEvent("orgconfigload", {
             shopCheckinEnabled: !!this._orgConfig.shop_checkin_enabled,
+            footerEnabled: !!this._orgConfig.footer_enabled,
           });
         }
       } catch (e) {

@@ -17,7 +17,7 @@
     </view>
   </view>
 
-  <view class="footer">
-    <text>Lingyan Metaverse</text>
+  <view class="footer" wx:if="{{showFooter}}">
+    <image class="footer-logo" src="/assets/DHL-Outlined.png" mode="aspectFit" />
   </view>
 </view>

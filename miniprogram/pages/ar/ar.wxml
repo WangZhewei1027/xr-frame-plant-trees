@@ -1,5 +1,9 @@
 <view class="page-container">
   <!-- AR 底层画布 -->
+
+  <!-- 顶部 Logo 叠层 -->
+  <image wx:if="{{footerEnabled}}" class="ar-top-logo" src="/assets/DHL-Outlined.png" mode="aspectFit" />
+
   <xr-start
     disable-scroll
     id="main-frame"

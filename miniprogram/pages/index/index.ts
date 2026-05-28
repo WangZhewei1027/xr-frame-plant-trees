@@ -5,6 +5,7 @@ Page({
     title: "",
     subtitle: "",
     loaded: false,
+    showFooter: false,
   },
 
   async onLoad(options: Record<string, string | undefined>) {
@@ -20,9 +21,9 @@ Page({
     try {
       // 并行拉取 organization / workspace 名称，避免串行 await 阻塞首屏渲染
       const orgPromise = CONFIG.organizationId
-        ? supabaseGet<{ name: string }[]>(
+        ? supabaseGet<{ name: string; config?: Record<string, unknown> }[]>(
             "organization",
-            `id=eq.${CONFIG.organizationId}&select=name&limit=1`,
+            `id=eq.${CONFIG.organizationId}&select=name,config&limit=1`,
           ).catch(() => null)
         : Promise.resolve(null);
       const wsPromise = CONFIG.workspaceId
@@ -42,6 +43,11 @@ Page({
         orgRes.data.length > 0
       ) {
         patch.title = orgRes.data[0].name;
+        const cfg = orgRes.data[0].config;
+        (patch as Record<string, unknown>).showFooter =
+          cfg && typeof cfg === "object"
+            ? !!(cfg as Record<string, unknown>).footer_enabled
+            : false;
       }
       if (
         wsRes &&

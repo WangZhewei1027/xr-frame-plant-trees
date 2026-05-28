@@ -20,6 +20,7 @@ Page({
     canSubmit: false,
     showShopPanel: false,
     shopCheckinEnabled: false,
+    footerEnabled: false,
     compassHeading: 0,
   },
 
@@ -166,8 +167,11 @@ Page({
   },
 
   onOrgConfigLoad(e: WechatMiniprogram.CustomEvent) {
-    const { shopCheckinEnabled } = e.detail;
-    this.setData({ shopCheckinEnabled: shopCheckinEnabled !== false });
+    const { shopCheckinEnabled, footerEnabled } = e.detail;
+    this.setData({
+      shopCheckinEnabled: shopCheckinEnabled !== false,
+      footerEnabled: !!footerEnabled,
+    });
   },
 
   /** 店铺导航目标变更时，同步到 XR 组件 */
