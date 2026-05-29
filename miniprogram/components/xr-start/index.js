@@ -58,9 +58,9 @@ function buildInitialState() {
       try {
         const orgId = CONFIG.organizationId || "";
         const saved = wx.getStorageSync(`config:org:${orgId}:textStyle:v1`);
-        return typeof saved === "string" && saved ? saved : "dialog_decorated";
+        return typeof saved === "string" && saved ? saved : "plain_white";
       } catch (_) {
-        return "dialog_decorated";
+        return "plain_white";
       }
     })(),
   };
