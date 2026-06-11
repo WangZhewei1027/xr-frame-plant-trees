@@ -7,13 +7,11 @@ const { CONFIG, supabaseGet } = require("../../utils/supabase");
 const createAssetsMethods = require("./assets/index");
 const createHugeMethods = require("./assets/huge");
 const createDanmakuMethods = require("./effects/danmaku");
-const createRepulsionMethods = require("./effects/repulsion");
 const particle = require("./effects/particle");
 const createConfettiMethods = require("./effects/confetti");
 
 const assetsMethods = createAssetsMethods(XR_CONFIG);
 const danmakuMethods = createDanmakuMethods(XR_CONFIG);
-const repulsionMethods = createRepulsionMethods(XR_CONFIG);
 const hugeMethods = createHugeMethods(XR_CONFIG);
 const confettiMethods = createConfettiMethods(XR_CONFIG);
 
@@ -58,9 +56,9 @@ function buildInitialState() {
       try {
         const orgId = CONFIG.organizationId || "";
         const saved = wx.getStorageSync(`config:org:${orgId}:textStyle:v1`);
-        return typeof saved === "string" && saved ? saved : "plain_white";
+        return typeof saved === "string" && saved ? saved : "dialog_decorated";
       } catch (_) {
-        return "plain_white";
+        return "dialog_decorated";
       }
     })(),
   };
@@ -78,9 +76,6 @@ Component({
       this.fetchOrgStyle();
     },
     detached() {
-      // 清空串行放置队列，防止组件销毁后残留 asset 继续执行
-      this._placeQueue = [];
-      this._placingBusy = false;
       if (this.locationWatchId) {
         wx.stopLocationUpdate();
         this.locationWatchId = null;
@@ -91,7 +86,9 @@ Component({
       }
       this.flyingDanmakus = [];
       for (const entry of this.nodeList) {
-        this._destroyNode(entry);
+        try {
+          this.shadowRoot?.removeChild(entry.node);
+        } catch (_) {}
       }
       this.nodeList = [];
       // 清理巨型远景模型
@@ -137,9 +134,6 @@ Component({
     // ─── 弹幕飞行 ───────────────────────────────────
     ...danmakuMethods,
 
-    // ─── 通用斥力（所有素材类型） ────────────────────
-    ...repulsionMethods,
-
     // ─── 粒子爆发 ───────────────────────────────────
     ...particle,
 
@@ -177,12 +171,8 @@ Component({
       this.FACING = xr.Vector3.createFromNumber(0, 0, 0);
       this.UP = xr.Vector3.createFromNumber(0, 1, 0);
 
-      // 三类预加载并行：树模型不再串行阻塞头像/气泡纹理，缩短首屏空白时间。
-      // 任一失败不阻塞其他（preload.js 内部对单张纹理加载已 catch）。
+      await this.loadTreeModel(xrScene);
       await Promise.all([
-        this.loadTreeModel(xrScene).catch((e) =>
-          console.warn("[preload] tree model failed:", e),
-        ),
         this.loadProfileTextures(xrScene),
         this.loadBubbleTextures(xrScene),
       ]);
@@ -198,10 +188,8 @@ Component({
 
     handleAssetsLoaded() {
       this.scene.event.addOnce("touchstart", this.placeNode.bind(this));
-      // 资源加载完成后，仅在组织开启彩带配置时启动（依赖 particle-confetti 纹理）
-      if (this._orgConfig && this._orgConfig.confetti_enabled) {
-        this.startRandomConfetti();
-      }
+      // 资源加载完成后启动随机彩带（依赖 particle-confetti 纹理）
+      this.startRandomConfetti();
     },
 
     handleAssetsProgress() {},
@@ -220,32 +208,18 @@ Component({
         this._fetchAnchorXZ = { x: camPos.x, z: camPos.z };
       }
 
-      // 分帧调度：把每帧 tick 的几类高频工作错开到不同帧，避免单帧累计耗时溢出 16ms。
-      // 弹幕飞行动画对延迟敏感，每帧都跑；其余按相位轮转。
       this.tickFlyingDanmakus();
-      const phase = (this._tickPhase = ((this._tickPhase || 0) + 1) & 0x3); // 0..3
-      if (phase === 0) this.tickRepulsion();
-      else if (phase === 1) this.tickModelAnimation();
-      else if (phase === 2) this.tickAudioVolume();
-      else this.tickHugeModels();
+      this.tickRepulsion();
+      this.tickAudioVolume();
+      this.tickModelAnimation();
+      this.tickHugeModels();
 
-      // billboard 朝向：每隔一帧更新一次，且仅在相机相对上次更新位移 > 1cm 时才重算；
-      // 否则沿用上一帧 quaternion（视觉上无差别，节省 35 节点 × Quaternion.lookRotation）。
-      const lastBb = this._lastBillboardCam;
-      const camMoved =
-        !lastBb ||
-        Math.abs(camPos.x - lastBb.x) > 0.01 ||
-        Math.abs(camPos.y - lastBb.y) > 0.01 ||
-        Math.abs(camPos.z - lastBb.z) > 0.01;
-      if ((phase & 1) === 0 && camMoved) {
-        this._lastBillboardCam = { x: camPos.x, y: camPos.y, z: camPos.z };
-        for (const entry of this.nodeList) {
-          const el = entry.billboardEl;
-          const trs = el?.getComponent(xr.Transform);
-          if (!trs) continue;
-          this.FACING.set(trs.worldPosition).sub(camPos, this.FACING);
-          xr.Quaternion.lookRotation(this.FACING, this.UP, trs.quaternion);
-        }
+      for (const entry of this.nodeList) {
+        const el = entry.billboardEl;
+        const trs = el?.getComponent(xr.Transform);
+        if (!trs) continue;
+        this.FACING.set(trs.worldPosition).sub(camPos, this.FACING);
+        xr.Quaternion.lookRotation(this.FACING, this.UP, trs.quaternion);
       }
 
       // 计算参考点到当前相机位置的 x/z 净位移向量长度
@@ -272,13 +246,10 @@ Component({
       try {
         const { statusCode, data } = await supabaseGet(
           "organization",
-          `id=eq.${orgId}&select=config`,
+          `id=eq.${orgId}&select=text_asset_miniapp_style`,
         );
         if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
-          const cfg = data[0].config;
-          this._orgConfig = cfg && typeof cfg === "object" ? cfg : {};
-          console.log("[orgStyle] config:", JSON.stringify(this._orgConfig));
-          const style = this._orgConfig.text_asset_miniapp_style;
+          const style = data[0].text_asset_miniapp_style;
           if (typeof style === "string" && style) {
             this._textAssetStyle = style;
             try {
@@ -287,10 +258,6 @@ Component({
               console.error("[orgStyle] Storage write failed", e);
             }
           }
-          this.triggerEvent("orgconfigload", {
-            shopCheckinEnabled: !!this._orgConfig.shop_checkin_enabled,
-            footerEnabled: !!this._orgConfig.footer_enabled,
-          });
         }
       } catch (e) {
         console.error("[orgStyle] fetch failed", e);

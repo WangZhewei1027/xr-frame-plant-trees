@@ -13,6 +13,10 @@ const XR_CONFIG = {
   distanceThreshold: 5,
   // 两次拉取之间的最小间隔（毫秒），防止短时间内连续触发
   fetchCooldownMs: 3000,
+  // 首次拉取延迟（毫秒）：ar-ready 后 AR 相机位姿（VIO）仍需若干帧收敛，
+  // 立刻放置会用到尚未稳定的相机 worldMatrix（forward 退化为世界 +Z），导致素材落到身后。
+  // 等 AR 就绪 + 该延迟后再触发首批拉取放置，确保 _calcForwardPos 拿到真实设备朝向。
+  firstFetchDelayMs: 2000,
   // 一批素材放置时，每个 asset 之间的错开间隔（毫秒）。
   // 避免一次性 createElement/addChild/loadAsset 全部堆在同一帧导致卡顿。
   // 40ms ≈ 2.5 帧，足够让一帧渲染完成、又能让一批 10 个素材在 ~0.4s 内显完。

@@ -7,9 +7,10 @@ applyTo: "miniprogram/**/*.{js,ts,wxml}"
 本文件仅包含坐标系、摄像机朝向、旋转相关规则。
 粒子参数规范见同目录的 `xr-frame-particles.instructions.md`。
 
-## 坐标系约定（右手系，+Y 朝上）
+## 坐标系约定（左手系，+Y 朝上）
 
-- **+X 向右，+Y 向上，+Z 向前**（相机 forward = **+Z**，与 Unity 一致）。
+- **+X 向右，+Y 向上，+Z 向前**（相机 forward = **+Z**，与 Unity 一致，即左手系）。
+  - 引擎仅提供 `Vector3.ForwardLH`（注释明确为"基于左手坐标系"），无右手系 forward 常量。
 - 重力方向 = 世界 −Y。
 - 抬起物体使其在地面之上：`position.y += 高度`（正值）。
 - 常见误区：把 +Y 当成向下会导致位移、重力、粒子方向全部反直觉。
