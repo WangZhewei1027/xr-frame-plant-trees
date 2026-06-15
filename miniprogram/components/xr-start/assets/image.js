@@ -42,11 +42,7 @@ module.exports = {
 
       const [imgInfo] = await Promise.all([
         dimPromise,
-        scene.assets.loadAsset({
-          type: "texture",
-          assetId,
-          src: asset.file_url,
-        }),
+        this._loadImageTexture(scene, assetId, asset.file_url),
       ]);
 
       console.log(
@@ -114,5 +110,68 @@ module.exports = {
     } catch (e) {
       console.error("[image] 加载图片失败:", asset.file_url, e);
     }
+  },
+
+  /**
+   * 加载图片纹理，带 PNG 兜底。
+   * xr-frame 自带纹理解码器对部分 webp 变体会抛 "Decode Image error"，
+   * 但系统解码器（wx.getImageInfo / canvas）能正常读取。故失败时经离屏
+   * canvas 重绘导出为 PNG 临时文件再加载，规避格式兼容问题。
+   */
+  async _loadImageTexture(scene, assetId, url) {
+    try {
+      await scene.assets.loadAsset({ type: "texture", assetId, src: url });
+    } catch (e) {
+      console.warn("[image] 纹理直接解码失败，启用 PNG 兜底:", url, e);
+      const pngPath = await this._convertImageToPngTempFile(url);
+      await scene.assets.loadAsset({ type: "texture", assetId, src: pngPath });
+      console.log("[image] PNG 兜底加载成功:", url);
+    }
+  },
+
+  /**
+   * 用系统解码器把任意可解码图片（含 xr-frame 解不了的 webp）重绘为 PNG 临时文件。
+   * 经 wx.getImageInfo 取本地路径与尺寸 → 离屏 2D canvas 绘制 → 导出 PNG。
+   */
+  _convertImageToPngTempFile(url) {
+    return new Promise((resolve, reject) => {
+      wx.getImageInfo({
+        src: url,
+        success: (info) => {
+          const w = info.width > 0 ? info.width : 1;
+          const h = info.height > 0 ? info.height : 1;
+          try {
+            const canvas = wx.createOffscreenCanvas({
+              type: "2d",
+              width: w,
+              height: h,
+            });
+            const ctx = canvas.getContext("2d");
+            const img = canvas.createImage();
+            img.onload = () => {
+              ctx.clearRect(0, 0, w, h);
+              ctx.drawImage(img, 0, 0, w, h);
+              wx.canvasToTempFilePath({
+                canvas,
+                x: 0,
+                y: 0,
+                width: w,
+                height: h,
+                destWidth: w,
+                destHeight: h,
+                fileType: "png",
+                success: (res) => resolve(res.tempFilePath),
+                fail: (err) => reject(err),
+              });
+            };
+            img.onerror = (err) => reject(err);
+            img.src = info.path; // 系统已解码的本地源文件
+          } catch (err) {
+            reject(err);
+          }
+        },
+        fail: (err) => reject(err),
+      });
+    });
   },
 };
