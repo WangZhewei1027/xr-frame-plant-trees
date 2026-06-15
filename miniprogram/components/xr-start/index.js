@@ -7,11 +7,13 @@ const { CONFIG, supabaseGet } = require("../../utils/supabase");
 const createAssetsMethods = require("./assets/index");
 const createHugeMethods = require("./assets/huge");
 const createDanmakuMethods = require("./effects/danmaku");
+const createRepulsionMethods = require("./effects/repulsion");
 const particle = require("./effects/particle");
 const createConfettiMethods = require("./effects/confetti");
 
 const assetsMethods = createAssetsMethods(XR_CONFIG);
 const danmakuMethods = createDanmakuMethods(XR_CONFIG);
+const repulsionMethods = createRepulsionMethods(XR_CONFIG);
 const hugeMethods = createHugeMethods(XR_CONFIG);
 const confettiMethods = createConfettiMethods(XR_CONFIG);
 
@@ -134,6 +136,9 @@ Component({
     // ─── 弹幕飞行 ───────────────────────────────────
     ...danmakuMethods,
 
+    // ─── 通用斥力（所有素材类型） ────────────────────
+    ...repulsionMethods,
+
     // ─── 粒子爆发 ───────────────────────────────────
     ...particle,
 
@@ -194,7 +199,12 @@ Component({
 
     handleAssetsProgress() {},
 
-    handleARReady() {},
+    handleARReady() {
+      // AR 相机就绪：标记 AR 侧闸门并尝试启动首批拉取。
+      // 必须设置 _arReady，否则 _maybeStartFirstFetch 永远 bail，导致完全不拉取 asset。
+      this._arReady = true;
+      this._maybeStartFirstFetch();
+    },
 
     handleTick() {
       const xr = wx.getXrFrameSystem();
