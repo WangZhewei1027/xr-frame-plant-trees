@@ -9,6 +9,25 @@ const DEFAULT_CONFIG = {
 };
 
 const SCAN_CONFIG_STORAGE_KEY = "config:scan:v1";
+const SCAN_HISTORY_STORAGE_KEY = "config:scan:history:v1";
+/** 历史记录最多保留条数，超出则淘汰最旧 */
+const SCAN_HISTORY_MAX = 20;
+
+/** 一条历史扫码记录 */
+export interface ScanHistoryEntry {
+  organizationId: string;
+  workspaceId?: string;
+  /** 展示用名称，由 index 拉取后回填 */
+  orgName?: string;
+  workspaceName?: string;
+  /** 最近使用时间戳，用于排序 */
+  ts: number;
+}
+
+/** 同一 org+workspace 视为同一条记录 */
+function historyKey(organizationId?: string, workspaceId?: string): string {
+  return `${organizationId || ""}|${workspaceId || ""}`;
+}
 
 /** 读取持久化的上次扫码参数 */
 function loadPersistedScanConfig(): {
@@ -43,6 +62,74 @@ function persistScanConfig(config: {
     wx.setStorageSync(SCAN_CONFIG_STORAGE_KEY, config);
   } catch (e) {
     console.error("[storage] config write failed", e);
+  }
+}
+
+/** 读取历史扫码记录，按最近使用时间倒序 */
+export function loadScanHistory(): ScanHistoryEntry[] {
+  try {
+    const saved = wx.getStorageSync(SCAN_HISTORY_STORAGE_KEY);
+    if (Array.isArray(saved)) {
+      return saved
+        .filter((e) => e && typeof e === "object" && e.organizationId)
+        .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    }
+    return [];
+  } catch (e) {
+    console.error("[storage] history read failed", e);
+    return [];
+  }
+}
+
+/**
+ * 覆写整份历史记录。
+ * 用于批量回填/刷新名称等场景（保留各条目原有 ts 与顺序）。
+ */
+export function saveScanHistory(list: ScanHistoryEntry[]): void {
+  try {
+    wx.setStorageSync(
+      SCAN_HISTORY_STORAGE_KEY,
+      list.slice(0, SCAN_HISTORY_MAX),
+    );
+  } catch (e) {
+    console.error("[storage] history save failed", e);
+  }
+}
+
+/**
+ * 写入/更新一条历史记录。
+ * 同一 org+workspace 去重（更新名称与时间戳并置顶），超出上限淘汰最旧。
+ */
+export function recordScanHistory(entry: {
+  organizationId?: string;
+  workspaceId?: string;
+  orgName?: string;
+  workspaceName?: string;
+}): void {
+  if (!entry.organizationId) return;
+  try {
+    const list = loadScanHistory();
+    const key = historyKey(entry.organizationId, entry.workspaceId);
+    const filtered = list.filter(
+      (e) => historyKey(e.organizationId, e.workspaceId) !== key,
+    );
+    const prev = list.find(
+      (e) => historyKey(e.organizationId, e.workspaceId) === key,
+    );
+    filtered.unshift({
+      organizationId: entry.organizationId,
+      workspaceId: entry.workspaceId || undefined,
+      // 名称缺省时沿用旧记录，避免覆盖已有展示名
+      orgName: entry.orgName ?? prev?.orgName,
+      workspaceName: entry.workspaceName ?? prev?.workspaceName,
+      ts: Date.now(),
+    });
+    wx.setStorageSync(
+      SCAN_HISTORY_STORAGE_KEY,
+      filtered.slice(0, SCAN_HISTORY_MAX),
+    );
+  } catch (e) {
+    console.error("[storage] history write failed", e);
   }
 }
 

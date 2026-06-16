@@ -69,8 +69,57 @@ function setConfig(params) {
 | Key | 格式 | 用途 |
 |-----|------|------|
 | `config:scan:v1` | `{ organizationId?: string, workspaceId?: string }` | 持久化上次扫码参数 |
+| `config:scan:history:v1` | `ScanHistoryEntry[]` | 历史扫码过的 org/workspace 列表 |
 
 命名遵循 `<module>:<name>:v<version>` 规范，无多租户维度（config 本身即租户标识）。
+
+## 历史记录与主页切换
+
+主页（`index`）提供下拉菜单，可在历史扫码过的 org/workspace 之间切换，无需重新扫码。
+
+### 数据结构
+
+```ts
+interface ScanHistoryEntry {
+  organizationId: string;
+  workspaceId?: string;
+  orgName?: string;        // 展示名，由 index 拉取后回填
+  workspaceName?: string;
+  ts: number;              // 最近使用时间戳，用于排序与去重置顶
+}
+```
+
+### 写入时机
+
+`index.ts` 的 `fetchNames()` 拉取到 org/workspace 名称后，调用
+`recordScanHistory()` 将当前 CONFIG（含名称）写入历史：
+
+- **去重**：同一 `org|workspace` 组合视为一条，更新名称与时间戳并置顶。
+- **名称兜底**：本次未拉到名称时沿用旧记录，避免覆盖已有展示名。
+- **上限**：最多保留 `SCAN_HISTORY_MAX = 20` 条，超出淘汰最旧。
+
+### 切换逻辑
+
+用户从下拉菜单选择某条历史记录时，`onSelectHistory()`：
+1. 复用 `setConfig()` 写入内存 CONFIG 并持久化为当前扫码参数（`config:scan:v1`）。
+2. 重新调用 `fetchNames()` 刷新标题/副标题/footer，并回填历史。
+
+> 切换复用 `setConfig`，因此与扫码进入共享同一套优先级与持久化逻辑——
+> 切换后的选择会成为下次冷启动的「上次扫码参数」。
+
+> `onShow` 时调用 `refreshHistory()` 刷新选中态，保证从 AR 等页面返回后列表正确。
+
+### 名称的后端同步
+
+历史记录里的 `orgName` / `workspaceName` 是**缓存的展示名**，后端重命名后可能过期。两条刷新路径：
+
+1. **当前选中项**：`fetchNames()`（onLoad / 切换时）总会实时拉取并经 `recordScanHistory` 回填，因此当前 org/workspace 名称始终最新。
+2. **整个历史列表**：onLoad 首屏渲染后异步调用 `refreshHistoryNames()`，用两次
+   `id=in.(…)` 批量请求（org / workspace 各一次）覆盖全部历史条目，名称有变化时写回
+   Storage 并重渲染下拉列表。
+
+> `refreshHistoryNames` 不阻塞首屏；仅在确有名称变化时才写 Storage。
+> 后端查不到（已删除）的条目**保留旧名不清空**，避免误删展示信息。
 
 ## 容错
 

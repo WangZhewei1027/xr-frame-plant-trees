@@ -3,6 +3,26 @@
     <view class="logo-mark"></view>
     <text class="title" wx:if="{{loaded}}">{{title || '无组织名'}}</text>
     <text class="subtitle" wx:if="{{loaded && subtitle}}">{{subtitle}}</text>
+
+    <view class="switcher" wx:if="{{loaded && history.length > 1}}">
+      <view class="switcher-trigger" bindtap="toggleDropdown">
+        <text class="switcher-label">切换组织 / 空间</text>
+        <view class="switcher-arrow {{dropdownOpen ? 'open' : ''}}"></view>
+      </view>
+      <view class="dropdown" wx:if="{{dropdownOpen}}">
+        <view
+          wx:for="{{history}}"
+          wx:key="ts"
+          class="dropdown-item {{item.active ? 'active' : ''}}"
+          data-org="{{item.organizationId}}"
+          data-ws="{{item.workspaceId}}"
+          bindtap="onSelectHistory"
+        >
+          <text class="dropdown-text">{{item.label}}</text>
+          <view class="dropdown-check" wx:if="{{item.active}}"></view>
+        </view>
+      </view>
+    </view>
   </view>
 
   <view class="menu">
