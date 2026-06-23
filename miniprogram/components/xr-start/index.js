@@ -53,6 +53,20 @@ function buildInitialState() {
     _confettiBursts: [],
     _confettiTimer: null,
     _confettiCounter: 0,
+    // 组织配置（organization.config jsonb），由 fetchOrgStyle 填充
+    _orgConfig: {},
+    // 资源是否已加载完成（彩带启动闸门之一）
+    _assetsLoaded: false,
+    // 彩带开关：从 org 配置读取，默认关闭（保守）；带本地缓存兜底
+    _confettiEnabled: (() => {
+      try {
+        const orgId = CONFIG.organizationId || "";
+        const saved = wx.getStorageSync(`config:org:${orgId}:confetti:v1`);
+        return saved === true;
+      } catch (_) {
+        return false;
+      }
+    })(),
     // 文本资源样式：从 org 配置读取，默认使用气泡样式
     _textAssetStyle: (() => {
       try {
@@ -193,7 +207,16 @@ Component({
 
     handleAssetsLoaded() {
       this.scene.event.addOnce("touchstart", this.placeNode.bind(this));
-      // 资源加载完成后启动随机彩带（依赖 particle-confetti 纹理）
+      this._assetsLoaded = true;
+      // 资源加载完成后按 org 配置启动随机彩带（依赖 particle-confetti 纹理）
+      this._maybeStartConfetti();
+    },
+
+    // 仅当资源已加载且 org 配置开启彩带时才启动；两个触发源（资源加载、
+    // 配置拉取）都会调用本方法，规避 fetchOrgStyle 异步未 await 的时序竞态。
+    _maybeStartConfetti() {
+      if (!this._assetsLoaded) return;
+      if (this._confettiEnabled !== true) return;
       this.startRandomConfetti();
     },
 
@@ -252,21 +275,48 @@ Component({
     async fetchOrgStyle() {
       const orgId = CONFIG.organizationId || "";
       if (!orgId) return;
-      const storageKey = `config:org:${orgId}:textStyle:v1`;
+      const styleKey = `config:org:${orgId}:textStyle:v1`;
+      const confettiKey = `config:org:${orgId}:confetti:v1`;
       try {
         const { statusCode, data } = await supabaseGet(
           "organization",
-          `id=eq.${orgId}&select=text_asset_miniapp_style`,
+          `id=eq.${orgId}&select=text_asset_miniapp_style,config`,
         );
         if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
-          const style = data[0].text_asset_miniapp_style;
-          if (typeof style === "string" && style) {
+          const row = data[0];
+          const cfg =
+            row.config && typeof row.config === "object" ? row.config : {};
+          this._orgConfig = cfg;
+
+          // 文本样式：优先读 config.text_asset_miniapp_style，
+          // 回退到历史顶层列 text_asset_miniapp_style（兼容旧数据）。
+          const style =
+            (typeof cfg.text_asset_miniapp_style === "string" &&
+              cfg.text_asset_miniapp_style) ||
+            (typeof row.text_asset_miniapp_style === "string" &&
+              row.text_asset_miniapp_style) ||
+            "";
+          if (style) {
             this._textAssetStyle = style;
             try {
-              wx.setStorageSync(storageKey, style);
+              wx.setStorageSync(styleKey, style);
             } catch (e) {
               console.error("[orgStyle] Storage write failed", e);
             }
+          }
+
+          // 彩带开关：来自 config.confetti_enabled
+          const confettiEnabled = cfg.confetti_enabled === true;
+          this._confettiEnabled = confettiEnabled;
+          try {
+            wx.setStorageSync(confettiKey, confettiEnabled);
+          } catch (e) {
+            console.error("[orgConfig] Storage write failed", e);
+          }
+          if (confettiEnabled) {
+            this._maybeStartConfetti();
+          } else {
+            this.stopRandomConfetti();
           }
         }
       } catch (e) {
