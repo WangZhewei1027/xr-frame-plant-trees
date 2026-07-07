@@ -17,8 +17,39 @@ const repulsionMethods = createRepulsionMethods(XR_CONFIG);
 const hugeMethods = createHugeMethods(XR_CONFIG);
 const confettiMethods = createConfettiMethods(XR_CONFIG);
 
+const DEFAULT_TEXT_ASSET_STYLE = "dialog_decorated";
+
+/**
+ * 组织配置（organization.config jsonb）本地缓存键。
+ * 整份 config 存一份，供冷启动/慢网时即时兜底：
+ * 用户可能在 fetchOrgStyle 拉取完成前就已进入 AR 页，靠缓存先渲染上次已知配置。
+ */
+function orgConfigStorageKey(orgId) {
+  return `config:org:${orgId || ""}:config:v1`;
+}
+
+/** 读取本地缓存的整份组织配置；无缓存或格式异常时返回 {} */
+function loadCachedOrgConfig() {
+  try {
+    const orgId = CONFIG.organizationId || "";
+    const saved = wx.getStorageSync(orgConfigStorageKey(orgId));
+    return saved && typeof saved === "object" ? saved : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+/** 从一份 config 派生文本资源样式，缺省回退默认气泡样式 */
+function textAssetStyleFromConfig(cfg) {
+  const style = cfg && cfg.text_asset_miniapp_style;
+  return typeof style === "string" && style ? style : DEFAULT_TEXT_ASSET_STYLE;
+}
+
 /** 组件 attach 时的实例字段初始值 */
 function buildInitialState() {
+  // 冷启动即读一次本地缓存的整份组织配置，彩带/文本样式都从中派生，
+  // 保证「已进入 AR 但 fetchOrgStyle 尚未返回」时也能按上次已知配置渲染。
+  const cachedConfig = loadCachedOrgConfig();
   return {
     nodeIdCounter: 0,
     nodeList: [], // [{ assetId, node, billboardEl, audioRefs, gen }]
@@ -53,30 +84,14 @@ function buildInitialState() {
     _confettiBursts: [],
     _confettiTimer: null,
     _confettiCounter: 0,
-    // 组织配置（organization.config jsonb），由 fetchOrgStyle 填充
-    _orgConfig: {},
+    // 组织配置（organization.config jsonb），由 fetchOrgStyle 刷新；先用本地缓存兜底
+    _orgConfig: cachedConfig,
     // 资源是否已加载完成（彩带启动闸门之一）
     _assetsLoaded: false,
-    // 彩带开关：从 org 配置读取，默认关闭（保守）；带本地缓存兜底
-    _confettiEnabled: (() => {
-      try {
-        const orgId = CONFIG.organizationId || "";
-        const saved = wx.getStorageSync(`config:org:${orgId}:confetti:v1`);
-        return saved === true;
-      } catch (_) {
-        return false;
-      }
-    })(),
-    // 文本资源样式：从 org 配置读取，默认使用气泡样式
-    _textAssetStyle: (() => {
-      try {
-        const orgId = CONFIG.organizationId || "";
-        const saved = wx.getStorageSync(`config:org:${orgId}:textStyle:v1`);
-        return typeof saved === "string" && saved ? saved : "dialog_decorated";
-      } catch (_) {
-        return "dialog_decorated";
-      }
-    })(),
+    // 彩带开关：来自 config.confetti_enabled，默认关闭（保守）
+    _confettiEnabled: cachedConfig.confetti_enabled === true,
+    // 文本资源样式：来自 config.text_asset_miniapp_style，默认气泡样式
+    _textAssetStyle: textAssetStyleFromConfig(cachedConfig),
   };
 }
 
@@ -275,12 +290,12 @@ Component({
     async fetchOrgStyle() {
       const orgId = CONFIG.organizationId || "";
       if (!orgId) return;
-      const styleKey = `config:org:${orgId}:textStyle:v1`;
-      const confettiKey = `config:org:${orgId}:confetti:v1`;
       try {
+        // 所有配置都在 config (jsonb) 字段里，不存在顶层 text_asset_miniapp_style 列，
+        // select 该列会整条查询报错（非 200），导致配置永远读不到。
         const { statusCode, data } = await supabaseGet(
           "organization",
-          `id=eq.${orgId}&select=text_asset_miniapp_style,config`,
+          `id=eq.${orgId}&select=config`,
         );
         if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
           const row = data[0];
@@ -288,39 +303,26 @@ Component({
             row.config && typeof row.config === "object" ? row.config : {};
           this._orgConfig = cfg;
 
-          // 文本样式：优先读 config.text_asset_miniapp_style，
-          // 回退到历史顶层列 text_asset_miniapp_style（兼容旧数据）。
-          const style =
-            (typeof cfg.text_asset_miniapp_style === "string" &&
-              cfg.text_asset_miniapp_style) ||
-            (typeof row.text_asset_miniapp_style === "string" &&
-              row.text_asset_miniapp_style) ||
-            "";
-          if (style) {
-            this._textAssetStyle = style;
-            try {
-              wx.setStorageSync(styleKey, style);
-            } catch (e) {
-              console.error("[orgStyle] Storage write failed", e);
-            }
-          }
-
-          // 彩带开关：来自 config.confetti_enabled
-          const confettiEnabled = cfg.confetti_enabled === true;
-          this._confettiEnabled = confettiEnabled;
+          // 持久化整份 config，供下次冷启动/慢网时即时兜底
           try {
-            wx.setStorageSync(confettiKey, confettiEnabled);
+            wx.setStorageSync(orgConfigStorageKey(orgId), cfg);
           } catch (e) {
             console.error("[orgConfig] Storage write failed", e);
           }
-          if (confettiEnabled) {
+
+          // 文本样式：仅来自 config.text_asset_miniapp_style
+          this._textAssetStyle = textAssetStyleFromConfig(cfg);
+
+          // 彩带开关：来自 config.confetti_enabled
+          this._confettiEnabled = cfg.confetti_enabled === true;
+          if (this._confettiEnabled) {
             this._maybeStartConfetti();
           } else {
             this.stopRandomConfetti();
           }
         }
       } catch (e) {
-        console.error("[orgStyle] fetch failed", e);
+        console.error("[orgConfig] fetch failed", e);
       }
     },
 
