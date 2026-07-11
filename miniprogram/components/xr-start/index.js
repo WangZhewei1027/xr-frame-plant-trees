@@ -215,6 +215,12 @@ Component({
     // 仅当资源已加载且 org 配置开启彩带时才启动；两个触发源（资源加载、
     // 配置拉取）都会调用本方法，规避 fetchOrgStyle 异步未 await 的时序竞态。
     _maybeStartConfetti() {
+      console.log(
+        "[confetti] _maybeStartConfetti gate assetsLoaded=",
+        this._assetsLoaded,
+        "confettiEnabled=",
+        this._confettiEnabled,
+      );
       if (!this._assetsLoaded) return;
       if (this._confettiEnabled !== true) return;
       this.startRandomConfetti();
@@ -278,9 +284,12 @@ Component({
       const styleKey = `config:org:${orgId}:textStyle:v1`;
       const confettiKey = `config:org:${orgId}:confetti:v1`;
       try {
+        // 注意：text_asset_miniapp_style 顶层列已废弃并迁入 config jsonb。
+        // 若仍在 select 中引用该列，PostgREST 会以 400 拒绝整个请求，
+        // 导致 statusCode!==200、配置不落地、彩带无法启动。故只选 config。
         const { statusCode, data } = await supabaseGet(
           "organization",
-          `id=eq.${orgId}&select=text_asset_miniapp_style,config`,
+          `id=eq.${orgId}&select=config`,
         );
         if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
           const row = data[0];
@@ -308,6 +317,14 @@ Component({
           // 彩带开关：来自 config.confetti_enabled
           const confettiEnabled = cfg.confetti_enabled === true;
           this._confettiEnabled = confettiEnabled;
+          console.log(
+            "[orgConfig] fetched",
+            JSON.stringify(cfg),
+            "confettiEnabled=",
+            confettiEnabled,
+            "assetsLoaded=",
+            this._assetsLoaded,
+          );
           try {
             wx.setStorageSync(confettiKey, confettiEnabled);
           } catch (e) {
@@ -318,6 +335,23 @@ Component({
           } else {
             this.stopRandomConfetti();
           }
+
+          // 将店铺打卡/页脚开关向上抛给 ar 页面（bind:orgconfigload）。
+          // 页面用 shopCheckinEnabled !== false 判定，故透传原始配置值：
+          // 缺省(undefined)按“默认开”，显式 false 才隐藏。
+          this.triggerEvent("orgconfigload", {
+            shopCheckinEnabled: cfg.shop_checkin_enabled,
+            footerEnabled: cfg.footer_enabled,
+          });
+        } else {
+          console.warn(
+            "[orgConfig] unexpected response orgId=",
+            orgId,
+            "statusCode=",
+            statusCode,
+            "data=",
+            JSON.stringify(data),
+          );
         }
       } catch (e) {
         console.error("[orgStyle] fetch failed", e);
