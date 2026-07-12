@@ -56,15 +56,15 @@ module.exports = function (XR_CONFIG) {
     },
 
     /**
-     * 双队列策略（oldQueue / newQueue / danmakuQueue 共享同一个 nodeList 数组，靠 entry.gen 区分）：
-     *   - gen='old'：上一轮及更早拉取遗留。驱逐策略 = 离用户最远优先。包含从数据库拉下来的历史弹幕。
-     *   - gen='new'：本轮拉取刚放置。驱逐策略 = FIFO。
-     *   - gen='danmaku'：用户刚发、尚未入库返回的在场弹幕。驱逐策略 = FIFO 独立队列。
+     * 容量桶策略（所有节点共享 nodeList 数组，靠 entry.bucket 区分，见 registry.js / config.js）：
+     *   - heavy（model/video）、light（text/image，含历史弹幕）、audio：按【位置距离】最远先踢。
+     *   - transient（直发弹幕）：FIFO 驱逐最旧。
+     * 各桶独立限容、互不驱逐 —— 文本洪水只挤 light 桶，永远碰不到 heavy 里的模型。
      *
-     * 拉取生命周期：
-     *   1. 将上轮的所有 'new' 提升为 'old'（轮次转换）
-     *   2. 以整个 nodeList 的 assetId 为准 diff，跳过重复、保证场景无重复素材
-     *   3. 逐个放置新素材，_registerNode 以 gen='new' 插入并触发该队列的容量检查
+     * 拉取生命周期（不再有 new/old 轮次翻转）：
+     *   1. 以整个 nodeList 的 assetId 为准 diff（在场 + 消失冷却期都跳过）
+     *   2. 限量揭示：每轮最多 revealPerFetch 个（首轮 revealFirstFetch），heavy 优先
+     *   3. 逐个串行放置，_registerNode 按类型归桶并触发该桶容量检查
      */
     displayAssets(assets) {
       // 预加载（scene + 头像/气泡纹理）未就绪时，先暂存，等 flushPendingDisplayAssets 调用
@@ -72,28 +72,36 @@ module.exports = function (XR_CONFIG) {
         const merged = (this._pendingDisplayAssets || []).concat(assets);
         // 限制暂存上限：用户在预加载期间快速移动可能触发多次 fetch，
         // 累积过多 asset 会让 preload 完成后串行放置队列工作数秒。仅保留最新一批最相关的。
-        const MAX_PENDING = (XR_CONFIG.maxNewNodeCount || 10) * 2;
+        const lightCap = (XR_CONFIG.buckets && XR_CONFIG.buckets.light.cap) || 20;
+        const MAX_PENDING = lightCap * 2;
         this._pendingDisplayAssets =
           merged.length > MAX_PENDING ? merged.slice(-MAX_PENDING) : merged;
         return;
       }
 
-      // 1. 轮次转换：上一轮的 'new' 变为 'old'。弹幕队列不受影响。
-      for (const entry of this.nodeList) {
-        if (entry.gen === "new") entry.gen = "old";
-      }
-
-      // 2. diff 去重：跳过任何队列中已存在的 assetId
+      // 1. diff 去重：跳过在场的 assetId + 处于消失冷却期的（防短距离重复弹幕）
       const cachedIds = new Set();
       for (const entry of this.nodeList) {
         if (entry.assetId !== null) cachedIds.add(entry.assetId);
       }
-      const newAssets = assets.filter((a) => !cachedIds.has(a.id));
+      const newAssets = assets.filter(
+        (a) =>
+          !cachedIds.has(a.id) && !this._isInRepeatCooldown(a.id, a.file_type),
+      );
+
+      // 2. 限量揭示：每轮最多放 revealPerFetch 个（首轮 revealFirstFetch 加量），
+      //    未入选的直接丢弃，下轮拉取重新返回时再轮到——制造"边走边逐步出现"。
+      //    _firstRevealDone 只在实际放了内容时置位：首轮遇到空区域不消耗加量资格。
+      const limit = this._firstRevealDone
+        ? XR_CONFIG.revealPerFetch || 3
+        : XR_CONFIG.revealFirstFetch || 6;
+      const batch = this._pickRevealBatch(newAssets, limit);
+      if (batch.length > 0) this._firstRevealDone = true;
 
       // 3. 串行放置：等上一个 asset 的异步操作完成后再开始下一个，
       //    避免多个 loadAsset 回调在同一帧扎堆导致卡顿。
       //    相邻两次放置之间额外插入 placeStaggerMs 的空闲窗口，让渲染帧喘气。
-      this._enqueueDisplayAssets(newAssets);
+      this._enqueueDisplayAssets(batch);
     },
 
     /** 预加载完成后由 index.js 调用，把暂存的 assets 一次性放置 */

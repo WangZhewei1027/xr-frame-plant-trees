@@ -58,6 +58,19 @@ module.exports = {
       if (!pos) return;
       const { x, y, z } = pos;
 
+      // 完成时复检：若放下去会立即成为 heavy 桶里最远被踢，直接放弃，
+      // 不做后续昂贵的节点创建 / GPU 上传，并释放已建的 texture/material。
+      if (!this._wouldSurvive(pos, "heavy")) {
+        console.log("[video] 完成时复检：无存活槽位，放弃放置", asset.file_url);
+        try {
+          scene.assets.releaseAsset("video-texture", videoAssetId);
+        } catch (_) {}
+        try {
+          scene.assets.releaseAsset("material", matAssetId);
+        } catch (_) {}
+        return;
+      }
+
       // 3. 计算显示宽高比
       //    metadata.width/height 为内容（上半区）尺寸，不包含下半 Alpha 区；默认 16:9
       const contentW = meta.width || 16;
@@ -88,7 +101,8 @@ module.exports = {
       rootNode.addChild(meshEl);
 
       // billboardEl = rootNode，使整个平面在 handleTick 中始终朝向相机
-      this._registerNode(asset.id, rootNode, rootNode, null, {
+      this._registerNode(asset.id, rootNode, rootNode, {
+        type: "video",
         videoRefs: { scene, videoAssetId, matAssetId },
       });
 

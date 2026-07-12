@@ -151,7 +151,7 @@ module.exports = function (XR_CONFIG) {
       const ey = camPos.y + worldForward.y * 1.5;
       const ez = camPos.z + worldForward.z * 1.5;
 
-      // 弹幕独立队列（gen='danmaku'），超限时由 _enforceCapacity FIFO 驱逐最旧弹幕。
+      // 弹幕独立 transient 桶，超限时由 _enforceCapacity FIFO 驱逐最旧弹幕。
 
       const rootNode = scene.createElement(xr.XRNode, {
         id: `danmaku-${this.nodeIdCounter++}`,
@@ -163,9 +163,9 @@ module.exports = function (XR_CONFIG) {
       const textEl = this._buildBubbleNodes(rootNode, text);
 
       // billboard 目标 = rootNode，让整个气泡结构朝向相机
-      // assetId = null 表示本地刚发、未入库的弹幕；gen='danmaku' 走独立 FIFO 队列。
-      // （后续从数据库拉下来的历史弹幕会是 text 类型素材，走正常的 'new'/'old' 队列）
-      this._registerNode(null, rootNode, rootNode, null, { gen: "danmaku" });
+      // assetId = null 表示本地刚发、未入库的弹幕；type='danmaku' 归入 transient 桶（FIFO）。
+      // （后续从数据库拉下来的历史弹幕是 text 类型素材，归入 light 桶）
+      this._registerNode(null, rootNode, rootNode, { type: "danmaku" });
 
       this.flyingDanmakus.push({
         node: rootNode,

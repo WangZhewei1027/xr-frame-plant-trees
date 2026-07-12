@@ -87,6 +87,13 @@ module.exports = {
       if (!pos) return;
       const { x, y, z } = pos;
 
+      // 完成时复检：若放下去会立即成为 heavy 桶里最远被踢，直接放弃。
+      // GLB 已被 URL Promise 缓存（复用零成本），跳过最贵的 setData/GPU 上传/calcBoundBox。
+      if (!this._wouldSurvive(pos, "heavy")) {
+        console.log(`[model] 完成时复检：无存活槽位，放弃放置 ${asset.file_url}`);
+        return;
+      }
+
       // 先把节点加入场景，再通过 Transform API 设置世界坐标
       const rootNode = scene.createElement(xr.XRNode, {
         id: `model-node-${this.nodeIdCounter++}`,
@@ -141,20 +148,19 @@ module.exports = {
         });
       }
 
-      this._registerNode(asset.id, rootNode, null);
+      const entry = this._registerNode(asset.id, rootNode, null, {
+        type: "model",
+      });
       // 无内置动画时才叠加上下跳动 + 水平旋转效果
-      if (!hasAnimation) {
-        const lastEntry = this.nodeList[this.nodeList.length - 1];
-        if (lastEntry && lastEntry.node === rootNode) {
-          lastEntry.modelAnim = {
-            baseY: y,
-            bobAmplitude: 0.05, // 上下幅度 5cm
-            bobSpeed: 1.5 + Math.random() * 1.0, // 1.5~2.5 rad/s
-            bobPhase: Math.random() * Math.PI * 2,
-            rotateSpeed: 0.6 + Math.random() * 0.8, // 0.6~1.4 rad/s
-            rotateAngle: Math.random() * Math.PI * 2,
-          };
-        }
+      if (!hasAnimation && entry) {
+        entry.modelAnim = {
+          baseY: y,
+          bobAmplitude: 0.05, // 上下幅度 5cm
+          bobSpeed: 1.5 + Math.random() * 1.0, // 1.5~2.5 rad/s
+          bobPhase: Math.random() * Math.PI * 2,
+          rotateSpeed: 0.6 + Math.random() * 0.8, // 0.6~1.4 rad/s
+          rotateAngle: Math.random() * Math.PI * 2,
+        };
       }
     } catch (e) {
       console.error("[model] 加载模型失败:", asset.file_url, e);

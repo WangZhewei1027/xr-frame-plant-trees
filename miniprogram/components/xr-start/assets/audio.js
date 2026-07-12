@@ -149,14 +149,11 @@ module.exports = function (XR_CONFIG) {
         const finalScale = s * scaleMultiplier;
         transform.scale.setValue(finalScale, finalScale, finalScale);
 
-        // audioRefs.ctx 在 _destroyNode 中自动 stop()+destroy()
+        // audioRefs.ctx 由 registry 的 audio.dispose 在销毁时 stop()+destroy()
         // 直接存储世界坐标，避免依赖 worldPosition（多节点时可能不稳定）
         this._registerNode(asset.id, rootNode, null, {
-          ctx,
-          baseVolume,
-          srcX,
-          srcY,
-          srcZ,
+          type: "audio",
+          audioRefs: { ctx, baseVolume, srcX, srcY, srcZ },
         });
       } catch (e) {
         console.error("[audio] 加载耳机模型失败:", e);
@@ -178,11 +175,8 @@ module.exports = function (XR_CONFIG) {
         });
         rootNode.addChild(cubeEl);
         this._registerNode(asset.id, rootNode, null, {
-          ctx,
-          baseVolume,
-          srcX,
-          srcY,
-          srcZ,
+          type: "audio",
+          audioRefs: { ctx, baseVolume, srcX, srcY, srcZ },
         });
       }
     },

@@ -21,7 +21,11 @@ const confettiMethods = createConfettiMethods(XR_CONFIG);
 function buildInitialState() {
   return {
     nodeIdCounter: 0,
-    nodeList: [], // [{ assetId, node, billboardEl, audioRefs, gen }]
+    nodeList: [], // [{ assetId, node, billboardEl, type, bucket, bornAt, audioRefs, videoRefs, modelAnim? }]
+    // assetId → 被驱逐时刻：repeatCooldownMs 类型（text/image）消失后冷却期内不重复放置
+    _seenAssets: new Map(),
+    // 首轮限量揭示是否已消耗（首轮 revealFirstFetch 加量，仅在实际放置过内容后置位）
+    _firstRevealDone: false,
     spatialAudioList: [],
     flyingDanmakus: [],
     particleTimers: [],

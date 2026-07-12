@@ -106,7 +106,7 @@ module.exports = {
       rootNode.addChild(meshEl);
 
       // billboardEl = rootNode，使其在 handleTick 中参与 billboard 旋转
-      this._registerNode(asset.id, rootNode, rootNode);
+      this._registerNode(asset.id, rootNode, rootNode, { type: "image" });
     } catch (e) {
       console.error("[image] 加载图片失败:", asset.file_url, e);
     }

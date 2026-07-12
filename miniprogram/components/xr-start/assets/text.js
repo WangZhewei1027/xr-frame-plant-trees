@@ -25,6 +25,6 @@ module.exports = {
       asset.config || null,
     );
     // billboard 目标 = rootNode，让整个气泡结构朝向相机
-    this._registerNode(asset.id, rootNode, rootNode);
+    this._registerNode(asset.id, rootNode, rootNode, { type: "text" });
   },
 };
