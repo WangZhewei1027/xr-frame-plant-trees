@@ -8,7 +8,6 @@ const createAssetsMethods = require("./assets/index");
 const createHugeMethods = require("./assets/huge");
 const createDanmakuMethods = require("./effects/danmaku");
 const createRepulsionMethods = require("./effects/repulsion");
-const particle = require("./effects/particle");
 const createConfettiMethods = require("./effects/confetti");
 
 const assetsMethods = createAssetsMethods(XR_CONFIG);
@@ -21,14 +20,18 @@ const confettiMethods = createConfettiMethods(XR_CONFIG);
 function buildInitialState() {
   return {
     nodeIdCounter: 0,
-    nodeList: [], // [{ assetId, node, billboardEl, type, bucket, bornAt, audioRefs, videoRefs, modelAnim? }]
+    nodeList: [], // [{ assetId, node, billboardEl, trs, billboardTrs, type, bucket, bornAt, audioRefs, videoRefs, imageRefs, modelAnim? }]
+    // 音频节点子列表（audioRefs 非空的 entry），由 queue 在注册/销毁时维护，
+    // tickAudioVolume 直接用，避免每帧 nodeList.filter 分配
+    _audioEntries: [],
+    // 相机 Transform 缓存（getCamTransform 首次解析后填充）
+    _camTrs: null,
     // assetId → 被驱逐时刻：repeatCooldownMs 类型（text/image）消失后冷却期内不重复放置
     _seenAssets: new Map(),
     // 首轮限量揭示是否已消耗（首轮 revealFirstFetch 加量，仅在实际放置过内容后置位）
     _firstRevealDone: false,
     spatialAudioList: [],
     flyingDanmakus: [],
-    particleTimers: [],
     // 预加载完成（tree/profile/bubble 全部就绪）才开始放置素材，避免气泡/头像降级
     _preloadDone: false,
     _pendingDisplayAssets: [],
@@ -100,10 +103,6 @@ Component({
         wx.stopLocationUpdate();
         this.locationWatchId = null;
       }
-      if (this.particleTimers) {
-        this.particleTimers.forEach((id) => clearTimeout(id));
-        this.particleTimers = [];
-      }
       this.flyingDanmakus = [];
       for (const entry of this.nodeList) {
         try {
@@ -157,9 +156,6 @@ Component({
     // ─── 通用斥力（所有素材类型） ────────────────────
     ...repulsionMethods,
 
-    // ─── 粒子爆发 ───────────────────────────────────
-    ...particle,
-
     // ─── 导航状态 ───────────────────────────────────
     ...navigation,
 
@@ -173,10 +169,15 @@ Component({
     ...preload,
 
     // ─── 场景节点管理 ───────────────────────────────
+    // 相机 Transform 首次解析后缓存：camera 元素不会变，
+    // 避免每帧多次 getElementById（字符串查找）+ getComponent。
     getCamTransform() {
-      const xr = wx.getXrFrameSystem();
+      if (this._camTrs) return this._camTrs;
+      const xr = this.xr || wx.getXrFrameSystem();
       const cam = this.scene?.getElementById("camera");
-      return cam?.getComponent(xr.Transform);
+      const trs = cam?.getComponent(xr.Transform);
+      if (trs) this._camTrs = trs;
+      return trs;
     },
 
     removeOldestNode() {
@@ -188,14 +189,17 @@ Component({
     // ─── XR 事件处理 ────────────────────────────────
     async handleReady({ detail }) {
       const xrScene = (this.scene = detail.value);
-      const xr = wx.getXrFrameSystem();
+      // xr-frame 系统引用缓存：运行期不变，供所有每帧路径复用
+      const xr = (this.xr = wx.getXrFrameSystem());
 
       this.shadowRoot = xrScene.getElementById("shadow-root");
       this.FACING = xr.Vector3.createFromNumber(0, 0, 0);
       this.UP = xr.Vector3.createFromNumber(0, 1, 0);
 
-      await this.loadTreeModel(xrScene);
+      // 树 GLB 与头像/气泡纹理并行加载：GLB 在远端（8thwall），串行会把它压在
+      // _preloadDone 关键路径最前面，白白推迟首批素材放置。
       await Promise.all([
+        this.loadTreeModel(xrScene),
         this.loadProfileTextures(xrScene),
         this.loadBubbleTextures(xrScene),
       ]);
@@ -219,12 +223,13 @@ Component({
     // 仅当资源已加载且 org 配置开启彩带时才启动；两个触发源（资源加载、
     // 配置拉取）都会调用本方法，规避 fetchOrgStyle 异步未 await 的时序竞态。
     _maybeStartConfetti() {
-      console.log(
-        "[confetti] _maybeStartConfetti gate assetsLoaded=",
-        this._assetsLoaded,
-        "confettiEnabled=",
-        this._confettiEnabled,
-      );
+      XR_CONFIG.debugLog &&
+        console.log(
+          "[confetti] _maybeStartConfetti gate assetsLoaded=",
+          this._assetsLoaded,
+          "confettiEnabled=",
+          this._confettiEnabled,
+        );
       if (!this._assetsLoaded) return;
       if (this._confettiEnabled !== true) return;
       this.startRandomConfetti();
@@ -240,7 +245,7 @@ Component({
     },
 
     handleTick() {
-      const xr = wx.getXrFrameSystem();
+      const xr = this.xr || (this.xr = wx.getXrFrameSystem());
       const camTransform = this.getCamTransform();
       if (!camTransform) return;
 
@@ -257,9 +262,9 @@ Component({
       this.tickModelAnimation();
       this.tickHugeModels();
 
+      // billboard：使用注册时缓存的 billboardTrs，零 getComponent 查找
       for (const entry of this.nodeList) {
-        const el = entry.billboardEl;
-        const trs = el?.getComponent(xr.Transform);
+        const trs = entry.billboardTrs;
         if (!trs) continue;
         this.FACING.set(trs.worldPosition).sub(camPos, this.FACING);
         xr.Quaternion.lookRotation(this.FACING, this.UP, trs.quaternion);

@@ -25,17 +25,28 @@ module.exports = function (XR_CONFIG) {
       const type = o.type || "text";
       const desc = REGISTRY[type];
       const bucket = (desc && desc.bucket) || "light";
+      const xr = wx.getXrFrameSystem();
       const newEntry = {
         assetId,
         node,
         billboardEl,
+        // Transform 组件在注册时解析一次并缓存：每帧 tick（billboard/斥力/模型动画）
+        // 直接用缓存引用，消除每帧 ~3N 次 getComponent 查找。
+        trs: node ? node.getComponent(xr.Transform) : null,
+        billboardTrs: billboardEl ? billboardEl.getComponent(xr.Transform) : null,
         type,
         bucket,
         bornAt: Date.now(),
         audioRefs: o.audioRefs || null,
         videoRefs: o.videoRefs || null,
+        imageRefs: o.imageRefs || null,
       };
       this.nodeList.push(newEntry);
+      // 音频子列表：tickAudioVolume 每帧直接用，免去 nodeList.filter 的每帧分配
+      if (newEntry.audioRefs) {
+        if (!this._audioEntries) this._audioEntries = [];
+        this._audioEntries.push(newEntry);
+      }
       this._enforceCapacity(newEntry);
       return newEntry;
     },
@@ -99,7 +110,8 @@ module.exports = function (XR_CONFIG) {
     /** 节点到相机的 XZ 平方距离（忽略高度）；无坐标/无相机时视作最远，优先淘汰。 */
     _nodeDistSq(entry, camPos, xr) {
       if (!camPos) return Infinity;
-      const wp = entry.node?.getComponent(xr.Transform)?.worldPosition;
+      const trs = entry.trs || entry.node?.getComponent(xr.Transform);
+      const wp = trs?.worldPosition;
       if (!wp) return Infinity;
       const dx = wp.x - camPos.x;
       const dz = wp.z - camPos.z;
@@ -182,6 +194,10 @@ module.exports = function (XR_CONFIG) {
       try {
         this.shadowRoot.removeChild(entry.node);
       } catch (_) {}
+      if (entry.audioRefs && this._audioEntries) {
+        const ai = this._audioEntries.indexOf(entry);
+        if (ai !== -1) this._audioEntries.splice(ai, 1);
+      }
       // 有 repeatCooldownMs 的类型：记录消失时刻，冷却期内 displayAssets 不再重新放置
       const desc = REGISTRY[entry.type];
       if (entry.assetId !== null && desc && desc.repeatCooldownMs) {

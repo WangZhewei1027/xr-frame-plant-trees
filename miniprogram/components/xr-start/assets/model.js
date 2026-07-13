@@ -1,4 +1,5 @@
 /** 模型素材：加载 GLTF/GLB，normalize 包围盒到 1m，无内置动画时叠加跳动+旋转 */
+const XR_CONFIG = require("../config");
 
 // URL → assetId 稳定映射：同一 GLB 复用 xr-frame 资源缓存，避免重复下载/解析。
 // nodeIdCounter 已不能作为 assetId 的唯一来源（会让相同 URL 反复加载，每次 500-1500ms）。
@@ -73,10 +74,11 @@ module.exports = {
     if (!scene || !camTransform || !asset.file_url) return;
 
     try {
-      console.log(`[model] 开始加载 url=${asset.file_url}`);
+      XR_CONFIG.debugLog &&
+        console.log(`[model] 开始加载 url=${asset.file_url}`);
       // 共享同一 Promise：若 prefetch 已经发起，这里直接 await 同一结果
       const model = await __getOrLoadModel(scene, asset.file_url);
-      console.log(`[model] 加载完成`);
+      XR_CONFIG.debugLog && console.log(`[model] 加载完成`);
 
       // 让出一帧：loadAsset 解析刚结束，立刻 setData/calcBoundBox 会连成长任务，
       // 用户感知为"咔哒一下卡"。等待一帧再继续，把重活摊到下一帧。
@@ -90,7 +92,10 @@ module.exports = {
       // 完成时复检：若放下去会立即成为 heavy 桶里最远被踢，直接放弃。
       // GLB 已被 URL Promise 缓存（复用零成本），跳过最贵的 setData/GPU 上传/calcBoundBox。
       if (!this._wouldSurvive(pos, "heavy")) {
-        console.log(`[model] 完成时复检：无存活槽位，放弃放置 ${asset.file_url}`);
+        XR_CONFIG.debugLog &&
+          console.log(
+            `[model] 完成时复检：无存活槽位，放弃放置 ${asset.file_url}`,
+          );
         return;
       }
 
@@ -172,7 +177,6 @@ module.exports = {
    * 巨型模型（_hugeNodeList）不受影响。
    */
   tickModelAnimation() {
-    const xr = wx.getXrFrameSystem();
     if (!this.nodeList || this.nodeList.length === 0) return;
     this._modelAnimLastTime = this._modelAnimLastTime || Date.now();
     const now = Date.now();
@@ -181,8 +185,8 @@ module.exports = {
 
     for (const entry of this.nodeList) {
       const anim = entry.modelAnim;
-      if (!anim || !entry.node) continue;
-      const trs = entry.node.getComponent(xr.Transform);
+      if (!anim) continue;
+      const trs = entry.trs; // 注册时缓存，免每帧 getComponent
       if (!trs) continue;
 
       // 上下跳动：基于初始 baseY 加上 sin 偏移

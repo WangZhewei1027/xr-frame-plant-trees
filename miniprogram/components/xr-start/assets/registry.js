@@ -17,7 +17,19 @@
  */
 module.exports = {
   text: { bucket: "light", repeatCooldownMs: 60000 },
-  image: { bucket: "light", repeatCooldownMs: 60000 },
+
+  image: {
+    bucket: "light",
+    repeatCooldownMs: 60000,
+    // 每次放置创建的唯一纹理必须随节点驱逐一起释放，否则 GPU 内存只增不减、越走越卡
+    dispose(entry) {
+      const { scene, texAssetId } = entry.imageRefs || {};
+      if (!scene) return;
+      try {
+        scene.assets.releaseAsset("texture", texAssetId);
+      } catch (_) {}
+    },
+  },
 
   model: { bucket: "heavy", async: true },
 

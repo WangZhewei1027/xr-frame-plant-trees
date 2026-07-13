@@ -33,11 +33,14 @@ Page({
       windowHeight: height,
       pixelRatio: dpi,
     } = wx.getSystemInfoSync();
+    // 渲染分辨率降采样：GPU 像素量随系数平方下降（0.5 → 75% 省），
+    // AR 相机背景本身有噪点，观感几乎无损；卡顿/发热时可再降，画质不满时上调。
+    const RENDER_SCALE = 0.5;
     this.setData({
       width,
       height,
-      renderWidth: width * dpi,
-      renderHeight: height * dpi,
+      renderWidth: Math.round(width * dpi * RENDER_SCALE),
+      renderHeight: Math.round(height * dpi * RENDER_SCALE),
     });
     this.getLocation();
     // 持续定位：使用 startLocationUpdate + onLocationChange，被动接收 GPS 更新，
@@ -186,10 +189,21 @@ Page({
   _startCompassWatch() {
     wx.startCompass({
       success: () => {
+        // 罗盘传感器 10-60Hz，每 tick setData+selectComponent 会与 XR 渲染争用主线程。
+        // 节流：变化 <2° 或距上次 <200ms 时跳过；组件引用只解析一次。
+        let lastHeading = -Infinity;
+        let lastTime = 0;
+        let xrComp: any = null;
         wx.onCompassChange((res: any) => {
           const heading: number = res.direction ?? res.heading ?? 0;
+          const now = Date.now();
+          let delta = Math.abs(heading - lastHeading);
+          if (delta > 180) delta = 360 - delta; // 跨 0°/360° 边界
+          if (delta < 2 || now - lastTime < 200) return;
+          lastHeading = heading;
+          lastTime = now;
           this.setData({ compassHeading: heading });
-          const xrComp = this.selectComponent("#main-frame") as any;
+          if (!xrComp) xrComp = this.selectComponent("#main-frame");
           if (xrComp) xrComp.updateCompassHeading(heading);
         });
       },

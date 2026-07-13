@@ -213,8 +213,9 @@ module.exports = function (XR_CONFIG) {
       const cutoffDist = XR_CONFIG.maxDistanceMeters || 20;
       const focusDist = 0.3;
 
-      const audioEntries = this.nodeList.filter((e) => e.audioRefs);
-      if (audioEntries.length === 0) return;
+      // 子列表由 queue 在注册/销毁时维护，避免每帧 filter 全量 nodeList
+      const audioEntries = this._audioEntries;
+      if (!audioEntries || audioEntries.length === 0) return;
 
       // 第一遍：计算各音源距离，找出是否有处于焦点范围内的音源（取最近的）
       let focusedEntry = null;

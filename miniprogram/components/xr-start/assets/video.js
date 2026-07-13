@@ -18,6 +18,7 @@
 
 // 模块加载时注册 TBB Effect（全局只需执行一次）
 require("../effects/transparent-video-tbb");
+const XR_CONFIG = require("../config");
 
 module.exports = {
   async _placeVideoAsset(asset) {
@@ -61,7 +62,11 @@ module.exports = {
       // 完成时复检：若放下去会立即成为 heavy 桶里最远被踢，直接放弃，
       // 不做后续昂贵的节点创建 / GPU 上传，并释放已建的 texture/material。
       if (!this._wouldSurvive(pos, "heavy")) {
-        console.log("[video] 完成时复检：无存活槽位，放弃放置", asset.file_url);
+        XR_CONFIG.debugLog &&
+          console.log(
+            "[video] 完成时复检：无存活槽位，放弃放置",
+            asset.file_url,
+          );
         try {
           scene.assets.releaseAsset("video-texture", videoAssetId);
         } catch (_) {}
@@ -106,9 +111,10 @@ module.exports = {
         videoRefs: { scene, videoAssetId, matAssetId },
       });
 
-      console.log(
-        `[video] TBB 透明视频已放置 videoAssetId=${videoAssetId} src=${asset.file_url}`,
-      );
+      XR_CONFIG.debugLog &&
+        console.log(
+          `[video] TBB 透明视频已放置 videoAssetId=${videoAssetId} src=${asset.file_url}`,
+        );
     } catch (e) {
       console.error("[video] 加载透明视频失败:", asset.file_url, e);
     }

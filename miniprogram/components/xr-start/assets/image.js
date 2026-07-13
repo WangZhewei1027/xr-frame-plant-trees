@@ -2,6 +2,8 @@
  * 图片素材：双面公告牌，按真实宽高比缩放，始终朝向相机。
  * 字段：file_url（图片 URL），metadata.width / metadata.height（可选）
  */
+const XR_CONFIG = require("../config");
+
 module.exports = {
   async _placeImageAsset(asset) {
     const xr = wx.getXrFrameSystem();
@@ -14,48 +16,54 @@ module.exports = {
       const nodeId = this.nodeIdCounter++;
       const assetId = `image-tex-${nodeId}`;
 
-      // 并行：获取图片实际尺寸 + 加载纹理资源
       // 图片尺寸通过 Storage 持久化缓存（按 URL 索引），避免重复 getImageInfo（每次 100-300ms）。
       const dimCacheKey = `imgInfo:dim:${asset.file_url}`;
       let cachedDim = null;
       try {
         cachedDim = wx.getStorageSync(dimCacheKey) || null;
       } catch (_) {}
-      const dimPromise = cachedDim
-        ? Promise.resolve(cachedDim)
-        : new Promise((resolve) => {
-            wx.getImageInfo({
-              src: asset.file_url,
-              success: (info) => {
-                try {
-                  wx.setStorageSync(dimCacheKey, {
-                    width: info.width,
-                    height: info.height,
-                    orientation: info.orientation,
-                  });
-                } catch (_) {}
-                resolve(info);
-              },
-              fail: () => resolve({ width: 1, height: 1 }),
-            });
+
+      let imgInfo;
+      if (cachedDim) {
+        // 尺寸已知：只需一次网络请求（纹理）
+        imgInfo = cachedDim;
+        await this._loadImageTexture(scene, assetId, asset.file_url);
+      } else {
+        // 首次见到该 URL：先 getImageInfo（下载+解码一次），
+        // 再用其返回的本地已解码文件作纹理源，避免第二次完整下载。
+        imgInfo = await new Promise((resolve) => {
+          wx.getImageInfo({
+            src: asset.file_url,
+            success: (info) => {
+              try {
+                wx.setStorageSync(dimCacheKey, {
+                  width: info.width,
+                  height: info.height,
+                  orientation: info.orientation,
+                });
+              } catch (_) {}
+              resolve(info);
+            },
+            fail: () => resolve({ width: 1, height: 1 }),
           });
+        });
+        await this._loadImageTexture(
+          scene,
+          assetId,
+          imgInfo.path || asset.file_url,
+        );
+      }
 
-      const [imgInfo] = await Promise.all([
-        dimPromise,
-        this._loadImageTexture(scene, assetId, asset.file_url),
-      ]);
-
-      console.log(
-        "[image] getImageInfo res:",
-        JSON.stringify({
-          nodeId,
-          width: imgInfo.width,
-          height: imgInfo.height,
-          orientation: imgInfo.orientation,
-          type: imgInfo.type,
-          path: imgInfo.path,
-        }),
-      );
+      XR_CONFIG.debugLog &&
+        console.log(
+          "[image] getImageInfo res:",
+          JSON.stringify({
+            nodeId,
+            width: imgInfo.width,
+            height: imgInfo.height,
+            orientation: imgInfo.orientation,
+          }),
+        );
 
       const rawW = imgInfo.width > 0 ? imgInfo.width : 1;
       const rawH = imgInfo.height > 0 ? imgInfo.height : 1;
@@ -68,9 +76,10 @@ module.exports = {
       ].includes(imgInfo.orientation);
       const imgW = rotated90 ? rawH : rawW;
       const imgH = rotated90 ? rawW : rawH;
-      console.log(
-        `[image] nodeId=${nodeId}, rotated90=${rotated90}, effective size=${imgW}x${imgH}, aspect=${(imgW / imgH).toFixed(3)}`,
-      );
+      XR_CONFIG.debugLog &&
+        console.log(
+          `[image] nodeId=${nodeId}, rotated90=${rotated90}, effective size=${imgW}x${imgH}, aspect=${(imgW / imgH).toFixed(3)}`,
+        );
       const targetH = 0.6; // 目标高度 0.6m
 
       // 加载完成后取当前相机位置，确保素材落在用户前方而非身后
@@ -106,7 +115,11 @@ module.exports = {
       rootNode.addChild(meshEl);
 
       // billboardEl = rootNode，使其在 handleTick 中参与 billboard 旋转
-      this._registerNode(asset.id, rootNode, rootNode, { type: "image" });
+      // imageRefs：驱逐时由 registry 的 image.dispose 释放该唯一纹理，防 GPU 内存泄漏
+      this._registerNode(asset.id, rootNode, rootNode, {
+        type: "image",
+        imageRefs: { scene, texAssetId: assetId },
+      });
     } catch (e) {
       console.error("[image] 加载图片失败:", asset.file_url, e);
     }
@@ -125,7 +138,7 @@ module.exports = {
       console.warn("[image] 纹理直接解码失败，启用 PNG 兜底:", url, e);
       const pngPath = await this._convertImageToPngTempFile(url);
       await scene.assets.loadAsset({ type: "texture", assetId, src: pngPath });
-      console.log("[image] PNG 兜底加载成功:", url);
+      XR_CONFIG.debugLog && console.log("[image] PNG 兜底加载成功:", url);
     }
   },
 

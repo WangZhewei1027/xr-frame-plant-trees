@@ -1,7 +1,8 @@
 /** XR 场景就绪后预加载纹理：树模型、头像圈图、气泡背景 */
 const XR_CONFIG = require("./config");
 
-const PROFILE_COUNT = 31;
+// 必须与 assets/profile/ 下实际文件数一致：多出的编号会在首屏窗口产生注定失败的 loadAsset
+const PROFILE_COUNT = 15;
 const BUBBLE_RATIO_MIN = 2;
 const BUBBLE_RATIO_MAX = 8;
 
@@ -18,7 +19,7 @@ module.exports = {
 
   /**
    * 头像圈图预加载：优先 await 前 8 张（足够首批气泡生成使用），
-   * 剩余 23 张转为 "fire-and-forget" 后台加载，不阻塞 _preloadDone。
+   * 其余转为 "fire-and-forget" 后台加载，不阻塞 _preloadDone。
    * 这样首屏可以提前 ~50% 进入素材放置阶段。
    */
   async loadProfileTextures(xrScene) {

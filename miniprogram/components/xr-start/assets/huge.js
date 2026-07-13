@@ -9,6 +9,9 @@ const { CONFIG, supabaseRpc } = require("../../../utils/supabase");
 // 必须用 Promise 缓存而非依赖 assetId 重复 loadAsset，因为 xr-frame 二次调用
 // 不返回 { value: model } 包装，会让 const { value } = ... 解构到 undefined。
 const __hugeUrlToPromise = new Map();
+// URL → 包围盒尺寸：巨型 GLB 的 calcTotalBoundBox 是最贵的一档（高面数可达数百 ms），
+// 同 URL 实例化出的包围盒固定，缓存复用（与 model.js 的 __urlToBoundSize 同策略）。
+const __hugeUrlToBoundSize = new Map();
 function __getHugeModel(scene, url) {
   let p = __hugeUrlToPromise.get(url);
   if (p) return p;
@@ -57,27 +60,30 @@ module.exports = function (XR_CONFIG) {
           p_workspace_id: CONFIG.workspaceId ?? null,
         });
 
-        console.log(
-          `[huge] fetch结果: statusCode=${statusCode}, 条数=${Array.isArray(data) ? data.length : "N/A"}`,
-        );
-        if (statusCode === 200 && Array.isArray(data)) {
+        XR_CONFIG.debugLog &&
           console.log(
-            "[huge] 原始数据:",
-            JSON.stringify(
-              data.map((a) => ({
-                id: a.id,
-                file_url: a.file_url,
-                lat: a.latitude,
-                lng: a.longitude,
-              })),
-            ),
+            `[huge] fetch结果: statusCode=${statusCode}, 条数=${Array.isArray(data) ? data.length : "N/A"}`,
           );
+        if (statusCode === 200 && Array.isArray(data)) {
+          XR_CONFIG.debugLog &&
+            console.log(
+              "[huge] 原始数据:",
+              JSON.stringify(
+                data.map((a) => ({
+                  id: a.id,
+                  file_url: a.file_url,
+                  lat: a.latitude,
+                  lng: a.longitude,
+                })),
+              ),
+            );
           this._pendingHugeAssets = data.filter(
             (a) => a.file_url && a.latitude != null && a.longitude != null,
           );
-          console.log(
-            `[huge] 过滤后待放置: ${this._pendingHugeAssets.length} 个`,
-          );
+          XR_CONFIG.debugLog &&
+            console.log(
+              `[huge] 过滤后待放置: ${this._pendingHugeAssets.length} 个`,
+            );
           this._placeHugeAssets();
         }
       } catch (err) {
@@ -95,14 +101,12 @@ module.exports = function (XR_CONFIG) {
       if (!this._pendingHugeAssets || this._pendingHugeAssets.length === 0)
         return;
       if (!this.scene || !this.getCamTransform()) {
-        console.log(
-          `[huge] _placeHugeAssets 等待: scene=${!!this.scene}, camTransform=${!!this.getCamTransform()}`,
-        );
         return;
       }
-      console.log(
-        `[huge] _placeHugeAssets 开始放置 ${this._pendingHugeAssets.length} 个模型`,
-      );
+      XR_CONFIG.debugLog &&
+        console.log(
+          `[huge] _placeHugeAssets 开始放置 ${this._pendingHugeAssets.length} 个模型`,
+        );
 
       const toPlace = this._pendingHugeAssets;
       this._pendingHugeAssets = [];
@@ -184,18 +188,19 @@ module.exports = function (XR_CONFIG) {
       const z = camPos.z + Math.cos(assetAngleXR) * displayDist;
       const y = camPos.y;
 
-      console.log(
-        `[huge] 放置计算 id=${asset.id}:`,
-        `\n  用户GPS=(${this.currentGPS.latitude.toFixed(6)}, ${this.currentGPS.longitude.toFixed(6)})`,
-        `\n  模型GPS=(${asset.latitude.toFixed(6)}, ${asset.longitude.toFixed(6)})`,
-        `\n  GPS距离=${distance.toFixed(1)}m, 方位角=${bearing.toFixed(1)}°`,
-        `\n  罗盘航向=${compassHeading.toFixed(1)}°`,
-        `\n  相机XR朝向=${((camAngleXR * 180) / Math.PI).toFixed(1)}°`,
-        `\n  相对角度=${((relAngleRad * 180) / Math.PI).toFixed(1)}°, 最终角度=${((assetAngleXR * 180) / Math.PI).toFixed(1)}°`,
-        `\n  XR放置距离=${displayDist.toFixed(2)}m`,
-        `\n  相机位置=(${camPos.x.toFixed(2)}, ${camPos.y.toFixed(2)}, ${camPos.z.toFixed(2)})`,
-        `\n  目标位置=(${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`,
-      );
+      XR_CONFIG.debugLog &&
+        console.log(
+          `[huge] 放置计算 id=${asset.id}:`,
+          `\n  用户GPS=(${this.currentGPS.latitude.toFixed(6)}, ${this.currentGPS.longitude.toFixed(6)})`,
+          `\n  模型GPS=(${asset.latitude.toFixed(6)}, ${asset.longitude.toFixed(6)})`,
+          `\n  GPS距离=${distance.toFixed(1)}m, 方位角=${bearing.toFixed(1)}°`,
+          `\n  罗盘航向=${compassHeading.toFixed(1)}°`,
+          `\n  相机XR朝向=${((camAngleXR * 180) / Math.PI).toFixed(1)}°`,
+          `\n  相对角度=${((relAngleRad * 180) / Math.PI).toFixed(1)}°, 最终角度=${((assetAngleXR * 180) / Math.PI).toFixed(1)}°`,
+          `\n  XR放置距离=${displayDist.toFixed(2)}m`,
+          `\n  相机位置=(${camPos.x.toFixed(2)}, ${camPos.y.toFixed(2)}, ${camPos.z.toFixed(2)})`,
+          `\n  目标位置=(${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`,
+        );
 
       try {
         const nodeId = this.nodeIdCounter++;
@@ -223,9 +228,18 @@ module.exports = function (XR_CONFIG) {
         // setData 引发 GPU 上传，让出一帧再算包围盒
         await new Promise((r) => setTimeout(r, 0));
 
-        // 先 normalize 最长边到 1m，再乘以放大倍数
-        const boundBox = gltfComp.calcTotalBoundBox();
-        const size = boundBox.size;
+        // 先 normalize 最长边到 1m，再乘以放大倍数。
+        // 包围盒按 URL 缓存：巨型 GLB 的 calcTotalBoundBox 最贵，同 URL 只算一次。
+        let size = __hugeUrlToBoundSize.get(asset.file_url);
+        if (!size) {
+          const boundBox = gltfComp.calcTotalBoundBox();
+          size = {
+            x: boundBox.size.x,
+            y: boundBox.size.y,
+            z: boundBox.size.z,
+          };
+          __hugeUrlToBoundSize.set(asset.file_url, size);
+        }
         const maxExtent = Math.max(size.x, size.y, size.z);
         const normalizeScale = maxExtent > 0.0001 ? 1.0 / maxExtent : 1.0;
         const scaleMultiplier =
@@ -235,19 +249,14 @@ module.exports = function (XR_CONFIG) {
         const hugeScale = normalizeScale * HUGE_MODEL_SCALE * scaleMultiplier;
         transform.scale.setValue(hugeScale, hugeScale, hugeScale);
 
-        // 读回实际设置的 transform 值
-        const actualPos = transform.position;
-        const actualScale = transform.scale;
-        console.log(
-          `[huge] ✅ 放置完成 id=${asset.id}:`,
-          `\n  boundBox.size=(${size.x.toFixed(3)}, ${size.y.toFixed(3)}, ${size.z.toFixed(3)})`,
-          `\n  maxExtent=${maxExtent.toFixed(3)}, normalizeScale=${normalizeScale.toFixed(3)}`,
-          `\n  scaleMultiplier=${scaleMultiplier}`,
-          `\n  hugeScale=${hugeScale.toFixed(3)}`,
-          `\n  实际position=(${actualPos.x.toFixed(2)}, ${actualPos.y.toFixed(2)}, ${actualPos.z.toFixed(2)})`,
-          `\n  实际scale=(${actualScale.x.toFixed(3)}, ${actualScale.y.toFixed(3)}, ${actualScale.z.toFixed(3)})`,
-          `\n  hugeNodeList当前数量=${this._hugeNodeList.length + 1}`,
-        );
+        XR_CONFIG.debugLog &&
+          console.log(
+            `[huge] ✅ 放置完成 id=${asset.id}:`,
+            `\n  boundBox.size=(${size.x.toFixed(3)}, ${size.y.toFixed(3)}, ${size.z.toFixed(3)})`,
+            `\n  maxExtent=${maxExtent.toFixed(3)}, normalizeScale=${normalizeScale.toFixed(3)}`,
+            `\n  scaleMultiplier=${scaleMultiplier}, hugeScale=${hugeScale.toFixed(3)}`,
+            `\n  hugeNodeList当前数量=${this._hugeNodeList.length + 1}`,
+          );
 
         this._hugeNodeList.push({
           assetId: asset.id,
@@ -287,6 +296,8 @@ module.exports = function (XR_CONFIG) {
      * 每帧调用：
      *  1. 尝试放置尚未放置的 pending 巨型模型（scene 可能在 fetch 后才就绪）
      *  2. 检查 GPS 距离，靠近时移除模型
+     * Haversine 三角计算只在 GPS 更新时执行（updateGPS 每次生成新对象，引用比较即可），
+     * GPS ~1Hz，无需每帧重算。
      */
     tickHugeModels() {
       // 重试 pending
@@ -296,6 +307,8 @@ module.exports = function (XR_CONFIG) {
 
       if (!this._hugeNodeList || this._hugeNodeList.length === 0) return;
       if (!this.currentGPS) return;
+      if (this.currentGPS === this._lastHugeTickGPS) return;
+      this._lastHugeTickGPS = this.currentGPS;
 
       for (let i = this._hugeNodeList.length - 1; i >= 0; i--) {
         const entry = this._hugeNodeList[i];
@@ -307,9 +320,10 @@ module.exports = function (XR_CONFIG) {
         );
 
         if (distance < HUGE_HIDE_DISTANCE) {
-          console.log(
-            `[huge] 用户靠近巨型模型 id=${entry.assetId}, 距离=${distance.toFixed(0)}m, 隐藏`,
-          );
+          XR_CONFIG.debugLog &&
+            console.log(
+              `[huge] 用户靠近巨型模型 id=${entry.assetId}, 距离=${distance.toFixed(0)}m, 隐藏`,
+            );
           try {
             this.shadowRoot.removeChild(entry.node);
           } catch (_) {}

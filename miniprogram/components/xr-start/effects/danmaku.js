@@ -165,10 +165,13 @@ module.exports = function (XR_CONFIG) {
       // billboard 目标 = rootNode，让整个气泡结构朝向相机
       // assetId = null 表示本地刚发、未入库的弹幕；type='danmaku' 归入 transient 桶（FIFO）。
       // （后续从数据库拉下来的历史弹幕是 text 类型素材，归入 light 桶）
-      this._registerNode(null, rootNode, rootNode, { type: "danmaku" });
+      const entry = this._registerNode(null, rootNode, rootNode, {
+        type: "danmaku",
+      });
 
       this.flyingDanmakus.push({
         node: rootNode,
+        trs: entry.trs, // 注册时缓存的 Transform，飞行插值每帧直接用
         textEl,
         startPos: { x: sx, y: sy, z: sz },
         endPos: { x: ex, y: ey, z: ez },
@@ -179,10 +182,9 @@ module.exports = function (XR_CONFIG) {
       });
     },
 
-    /** 每帧驱动：插值飞行弹幕位置，到达后触发粒子爆发 */
+    /** 每帧驱动：插值飞行弹幕位置 */
     tickFlyingDanmakus() {
       if (!this.flyingDanmakus || this.flyingDanmakus.length === 0) return;
-      const xr = wx.getXrFrameSystem();
       const now = Date.now();
       const finished = [];
 
@@ -192,7 +194,7 @@ module.exports = function (XR_CONFIG) {
         let t = Math.min(elapsed / d.duration, 1);
         const ease = 1 - Math.pow(1 - t, 3); // easeOutCubic
 
-        const trs = d.node.getComponent(xr.Transform);
+        const trs = d.trs;
         if (!trs) {
           finished.push(i);
           continue;
@@ -209,7 +211,6 @@ module.exports = function (XR_CONFIG) {
         if (t >= 1 && !d.arrived) {
           d.arrived = true;
           finished.push(i);
-          this.burstParticleAt(d.node);
         }
       }
 

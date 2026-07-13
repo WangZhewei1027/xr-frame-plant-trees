@@ -36,8 +36,8 @@ page {
   align-items: center;
   padding: 16rpx 24rpx;
   padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+  /* 不用 backdrop-filter: blur —— 实时背景模糊迫使合成器每帧重采样 AR 画布，持续吃 GPU */
   background: rgba(30, 30, 30, 0.85);
-  backdrop-filter: blur(12px);
 }
 
 /* GPS 状态圆点 */

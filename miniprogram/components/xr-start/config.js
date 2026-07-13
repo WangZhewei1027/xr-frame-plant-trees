@@ -1,5 +1,9 @@
 /** xr-start 全局配置 */
 const XR_CONFIG = {
+  // 调试日志开关：放置/加载热路径上的 console.log（含 JSON.stringify 构造）在真机上
+  // 开销可观，且集中在 GPU 上传的突发窗口，默认关闭；排查问题时置 true。
+  // console.warn / console.error 不受此开关控制。
+  debugLog: false,
   maxDistanceMeters: 20,
   // ── 容量桶（bucket）：素材按"代价类"分桶，各桶独立限容、互不驱逐 ──
   //   - heavy（model/video）：加载昂贵、渲染重，独立小桶，文本洪水永远挤不掉。
@@ -36,8 +40,8 @@ const XR_CONFIG = {
   // 超额素材直接丢弃（不放置、不进冷却），服务端下轮拉取会重新返回、自然轮到。
   //   - revealFirstFetch：首轮（进场）适当加量，避免开场冷清。
   //   - revealPerFetch  ：之后每走 distanceThreshold 触发一轮，逐步冒新内容。
-  revealFirstFetch: 10,
-  revealPerFetch: 5,
+  revealFirstFetch: 20,
+  revealPerFetch: 10,
   // 斥力参数：nodeList 中所有已落位素材节点（文本/模型/图片/音频/视频/弹幕）之间的互斥推力。
   // repulsionRadius   : 斥力开始生效的距离（米），节点间距小于此值才会被推开。
   // repulsionStrength : 每帧最大位移量，值越大节点分散越快。
