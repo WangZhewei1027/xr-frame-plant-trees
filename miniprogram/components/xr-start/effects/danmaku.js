@@ -68,7 +68,7 @@ module.exports = function (XR_CONFIG) {
       if (bubbleTexId) {
         const bgMesh = scene.createElement(xr.XRMesh, {
           geometry: "plane",
-          material: "standard-mat",
+          material: "simple-mat", // unlit：广告牌贴图不需要光照
           uniforms: `u_baseColorMap: ${bubbleTexId}`,
           position: "0 0 -0.15",
           rotation: "90 0 0",
@@ -95,7 +95,7 @@ module.exports = function (XR_CONFIG) {
         const texId = profiles[Math.floor(Math.random() * profiles.length)];
         const avatarMesh = scene.createElement(xr.XRMesh, {
           geometry: "plane",
-          material: "standard-mat",
+          material: "simple-mat", // unlit：广告牌贴图不需要光照
           uniforms: `u_baseColorMap: ${texId}`,
           position: `${avatarX} 0 -0.15`,
           rotation: "90 0 0",

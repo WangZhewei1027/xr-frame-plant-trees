@@ -31,6 +31,10 @@ module.exports = {
     },
   },
 
+  // model 刻意不设 dispose：GLB 资源按 URL 在多节点间共享（model.js 的 Promise 缓存），
+  // 节点独占的实例化子树随 _destroyNode 的 removeChild 释放；若在此 releaseAsset('gltf')
+  // 会抽掉场上同款模型的底层资源。共享 GLB 的释放由 model.js 的 LRU（__trimModelCache，
+  // 上限 config.maxCachedModelUrls，仅释放无在场实例的 URL）负责。
   model: { bucket: "heavy", async: true },
 
   video: {

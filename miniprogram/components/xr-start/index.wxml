@@ -2,6 +2,9 @@
     <xr-assets bind:progress="handleAssetsProgress" bind:loaded="handleAssetsLoaded">
         <xr-asset-load type="gltf" asset-id="anchor" src="https://mmbizwxaminiprogram-1258344707.cos.ap-guangzhou.myqcloud.com/xr-frame/demo/ar-plane-marker.glb" />
         <xr-asset-material asset-id="standard-mat" effect="standard" />
+        <!-- 平面贴图（气泡/头像/图片广告牌）用 unlit 的 simple 效果：
+             不跑 PBR 光照，片元开销远低于 standard；这些面是 BLEND overdraw 的大头 -->
+        <xr-asset-material asset-id="simple-mat" effect="simple" />
         <xr-asset-load type="texture" asset-id="particle-confetti" src="/assets/confetti.png" />
     </xr-assets>
 

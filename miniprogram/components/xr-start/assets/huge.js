@@ -12,14 +12,31 @@ const __hugeUrlToPromise = new Map();
 // URL → 包围盒尺寸：巨型 GLB 的 calcTotalBoundBox 是最贵的一档（高面数可达数百 ms），
 // 同 URL 实例化出的包围盒固定，缓存复用（与 model.js 的 __urlToBoundSize 同策略）。
 const __hugeUrlToBoundSize = new Map();
+// URL → assetId：LRU 释放时需要按 assetId 调 releaseAsset
+const __hugeUrlToAssetId = new Map();
+
+function __hugeAssetId(url) {
+  let aid = __hugeUrlToAssetId.get(url);
+  if (!aid) {
+    let h = 5381;
+    for (let i = 0; i < url.length; i++) {
+      h = ((h << 5) + h + url.charCodeAt(i)) | 0;
+    }
+    aid = `huge-model-asset-${(h >>> 0).toString(36)}`;
+    __hugeUrlToAssetId.set(url, aid);
+  }
+  return aid;
+}
+
 function __getHugeModel(scene, url) {
   let p = __hugeUrlToPromise.get(url);
-  if (p) return p;
-  let h = 5381;
-  for (let i = 0; i < url.length; i++) {
-    h = ((h << 5) + h + url.charCodeAt(i)) | 0;
+  if (p) {
+    // LRU 触碰：删除后重插，把该 URL 刷新到 Map 尾部
+    __hugeUrlToPromise.delete(url);
+    __hugeUrlToPromise.set(url, p);
+    return p;
   }
-  const aid = `huge-model-asset-${(h >>> 0).toString(36)}`;
+  const aid = __hugeAssetId(url);
   p = scene.assets
     .loadAsset({ type: "gltf", assetId: aid, src: url })
     .then((res) => {
@@ -33,6 +50,22 @@ function __getHugeModel(scene, url) {
     });
   __hugeUrlToPromise.set(url, p);
   return p;
+}
+
+/**
+ * 巨型 GLB 缓存 LRU 裁剪：超过 max 时从最久未用端释放不受保护的条目。
+ * 巨型模型动辄几十 MB，驻留代价远高于普通模型，上限从紧。
+ */
+function __trimHugeCache(scene, max, protectedUrls) {
+  if (__hugeUrlToPromise.size <= max) return;
+  for (const url of Array.from(__hugeUrlToPromise.keys())) {
+    if (__hugeUrlToPromise.size <= max) break;
+    if (protectedUrls.has(url)) continue;
+    __hugeUrlToPromise.delete(url);
+    try {
+      scene.assets.releaseAsset("gltf", __hugeAssetId(url));
+    } catch (_) {}
+  }
 }
 
 module.exports = function (XR_CONFIG) {
@@ -261,9 +294,26 @@ module.exports = function (XR_CONFIG) {
         this._hugeNodeList.push({
           assetId: asset.id,
           node: rootNode,
+          url: asset.file_url,
           lat: asset.latitude,
           lng: asset.longitude,
         });
+
+        // 裁剪巨型 GLB 缓存：保护在场实例、待放置队列与本次 URL
+        const protectedUrls = new Set([asset.file_url]);
+        for (const e of this._hugeNodeList) {
+          if (e.url) protectedUrls.add(e.url);
+        }
+        if (this._hugePlaceQueue) {
+          for (const a of this._hugePlaceQueue) {
+            if (a.file_url) protectedUrls.add(a.file_url);
+          }
+        }
+        __trimHugeCache(
+          scene,
+          XR_CONFIG.maxCachedHugeUrls || 3,
+          protectedUrls,
+        );
       } catch (e) {
         console.error("[huge] 加载巨型模型失败:", asset.file_url, e);
       }

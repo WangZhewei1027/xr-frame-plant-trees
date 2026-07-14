@@ -32,7 +32,12 @@ function __getModelAssetId(url) {
  */
 function __getOrLoadModel(scene, url) {
   let p = __urlToModelPromise.get(url);
-  if (p) return p;
+  if (p) {
+    // LRU 触碰：删除后重插，把该 URL 刷新到 Map 尾部（Map 迭代序 = 插入序）
+    __urlToModelPromise.delete(url);
+    __urlToModelPromise.set(url, p);
+    return p;
+  }
   const aid = __getModelAssetId(url);
   p = scene.assets
     .loadAsset({ type: "gltf", assetId: aid, src: url })
@@ -55,6 +60,28 @@ function __getOrLoadModel(scene, url) {
 // 让渲染线程有机会出图，把单次 500-1500ms 的"卡死"切碎成多个 60ms 的小尖刺。
 function __yieldFrame() {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * GLB 解析缓存 LRU 裁剪：超过 maxCachedModelUrls 时，从最久未用端开始，
+ * 释放不在 protectedUrls（在场实例 + 待放置队列 + 刚放置）中的条目。
+ * 释放 = 删掉 Promise 缓存 + scene.assets.releaseAsset('gltf')；
+ * 包围盒缓存（仅 {x,y,z} 小对象）保留，重加载时可跳过 calcTotalBoundBox。
+ */
+function __trimModelCache(scene, protectedUrls) {
+  const max = XR_CONFIG.maxCachedModelUrls || 8;
+  if (__urlToModelPromise.size <= max) return;
+  for (const url of Array.from(__urlToModelPromise.keys())) {
+    if (__urlToModelPromise.size <= max) break;
+    if (protectedUrls.has(url)) continue;
+    __urlToModelPromise.delete(url);
+    const aid = __urlToAssetId.get(url);
+    if (aid) {
+      try {
+        scene.assets.releaseAsset("gltf", aid);
+      } catch (_) {}
+    }
+  }
 }
 
 module.exports = {
@@ -156,8 +183,10 @@ module.exports = {
       const entry = this._registerNode(asset.id, rootNode, null, {
         type: "model",
       });
+      // 记录 URL 供 GLB 缓存 LRU 判断"仍有在场实例"，禁止释放
+      entry.modelUrl = asset.file_url;
       // 无内置动画时才叠加上下跳动 + 水平旋转效果
-      if (!hasAnimation && entry) {
+      if (!hasAnimation) {
         entry.modelAnim = {
           baseY: y,
           bobAmplitude: 0.05, // 上下幅度 5cm
@@ -167,6 +196,19 @@ module.exports = {
           rotateAngle: Math.random() * Math.PI * 2,
         };
       }
+
+      // 裁剪 GLB 缓存：保护在场实例、待放置队列中的模型和本次 URL
+      const protectedUrls = new Set([asset.file_url]);
+      for (const e of this.nodeList) {
+        if (e.modelUrl) protectedUrls.add(e.modelUrl);
+      }
+      if (this._placeQueue) {
+        for (const a of this._placeQueue) {
+          if (a.file_type === "model" && a.file_url)
+            protectedUrls.add(a.file_url);
+        }
+      }
+      __trimModelCache(scene, protectedUrls);
     } catch (e) {
       console.error("[model] 加载模型失败:", asset.file_url, e);
     }

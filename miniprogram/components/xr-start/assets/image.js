@@ -107,7 +107,7 @@ module.exports = {
       // plane 默认水平，旋转 90° 让它垂直朝前；rootNode 在 tick 中会自动朝向相机
       const meshEl = scene.createElement(xr.XRMesh, {
         geometry: "plane",
-        material: "standard-mat",
+        material: "simple-mat", // unlit：图片广告牌不需要 PBR 光照
         uniforms: `u_baseColorMap: ${assetId}`,
         rotation: "90 0 0",
         states: "cullOn: false",
