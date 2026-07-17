@@ -16,6 +16,12 @@ interface HistoryItem extends ScanHistoryEntry {
   active: boolean;
 }
 
+/** AR 体验依赖的授权 scope 及其展示名 */
+const REQUIRED_SCOPES: { scope: string; label: string }[] = [
+  { scope: "scope.userLocation", label: "位置" },
+  { scope: "scope.camera", label: "相机" },
+];
+
 Page({
   data: {
     title: "",
@@ -24,6 +30,8 @@ Page({
     showFooter: false,
     history: [] as HistoryItem[],
     dropdownOpen: false,
+    /** 被用户明确拒绝的权限名称，如「位置、相机」；为空则不显示引导条 */
+    deniedPermText: "",
   },
 
   async onLoad(options: Record<string, string | undefined>) {
@@ -40,6 +48,37 @@ Page({
   onShow() {
     // 从 AR 等页面返回时刷新历史列表的选中态
     this.refreshHistory();
+    // 用户可能在 AR 页拒绝过授权，或从系统设置返回，每次展示都重查
+    this.checkPermissions();
+  },
+
+  /**
+   * 检查 AR 所需权限是否被用户明确拒绝过。
+   * authSetting 中 undefined 表示从未询问（首次使用时会正常弹授权框），
+   * 只有显式为 false 才需要引导去设置页——拒绝后 wx.authorize 不会再弹窗。
+   */
+  checkPermissions() {
+    wx.getSetting({
+      success: (res) => {
+        const denied = REQUIRED_SCOPES.filter(
+          (s) => res.authSetting[s.scope] === false,
+        ).map((s) => s.label);
+        this.setData({ deniedPermText: denied.join("、") });
+      },
+    });
+  },
+
+  /** 设置页返回后的回调：直接用返回的 authSetting 刷新引导条 */
+  onOpenSetting(e: WechatMiniprogram.CustomEvent) {
+    const authSetting =
+      (e.detail && e.detail.authSetting) || ({} as Record<string, boolean>);
+    const denied = REQUIRED_SCOPES.filter(
+      (s) => authSetting[s.scope] === false,
+    ).map((s) => s.label);
+    this.setData({ deniedPermText: denied.join("、") });
+    if (!denied.length) {
+      wx.showToast({ title: "权限已开启", icon: "success" });
+    }
   },
 
   async fetchNames() {

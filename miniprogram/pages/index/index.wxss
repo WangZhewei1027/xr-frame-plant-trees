@@ -176,6 +176,53 @@
   justify-content: center;
 }
 
+/* 权限被拒后的引导条，与卡片同风格但用暖色强调 */
+.perm-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #2a2a2a;
+  border-radius: 4rpx;
+  border-left: 6rpx solid #d4a04f;
+  padding: 28rpx 32rpx;
+  margin-bottom: 32rpx;
+  box-shadow: 0 10rpx 30rpx rgba(0, 0, 0, 0.2);
+}
+
+.perm-content {
+  display: flex;
+  flex-direction: column;
+  margin-right: 24rpx;
+}
+
+.perm-title {
+  font-size: 28rpx;
+  color: #e8c789;
+  margin-bottom: 8rpx;
+}
+
+.perm-desc {
+  font-size: 22rpx;
+  color: #999999;
+}
+
+.perm-btn {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 32rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  font-size: 24rpx;
+  font-weight: 400;
+  color: #1f1f1f;
+  background: #d4a04f;
+  border-radius: 4rpx;
+}
+
+.perm-btn::after {
+  border: none;
+}
+
 .card {
   background: #2a2a2a;
   border-radius: 4rpx; /* Sharper corners for modern/stone look */

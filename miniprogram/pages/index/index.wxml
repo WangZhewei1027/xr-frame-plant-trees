@@ -32,6 +32,18 @@
   </view>
 
   <view class="menu">
+    <view class="perm-banner" wx:if="{{deniedPermText}}">
+      <view class="perm-content">
+        <text class="perm-title">{{deniedPermText}}权限未开启</text>
+        <text class="perm-desc">开启后才能获取附近的 AR 素材与相机画面</text>
+      </view>
+      <button
+        class="perm-btn"
+        open-type="openSetting"
+        bindopensetting="onOpenSetting"
+      >去开启</button>
+    </view>
+
     <view class="card" bindtap="goToAR">
       <view class="card-content">
         <text class="card-title">开启旅程</text>
