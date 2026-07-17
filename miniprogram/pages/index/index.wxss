@@ -51,6 +51,34 @@
   font-weight: 300;
 }
 
+/* 名称加载中的骨架占位，尺寸与 title/subtitle 对齐避免布局跳动 */
+.skeleton {
+  border-radius: 6rpx;
+  background: linear-gradient(90deg, #2a2a2a 25%, #383838 50%, #2a2a2a 75%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton-title {
+  width: 380rpx;
+  height: 76rpx;
+  margin-bottom: 28rpx;
+}
+
+.skeleton-subtitle {
+  width: 220rpx;
+  height: 36rpx;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+
 .switcher {
   margin-top: 32rpx;
   position: relative;

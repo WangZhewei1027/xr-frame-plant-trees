@@ -1,8 +1,14 @@
 <view class="container">
   <view class="header">
     <view class="logo-mark"></view>
-    <text class="title" wx:if="{{loaded}}">{{title || '无组织名'}}</text>
-    <text class="subtitle" wx:if="{{loaded && subtitle}}">{{subtitle}}</text>
+    <block wx:if="{{loaded}}">
+      <text class="title">{{title || '无组织名'}}</text>
+      <text class="subtitle" wx:if="{{subtitle}}">{{subtitle}}</text>
+    </block>
+    <block wx:else>
+      <view class="skeleton skeleton-title"></view>
+      <view class="skeleton skeleton-subtitle"></view>
+    </block>
 
     <view class="switcher" wx:if="{{loaded && history.length > 1}}">
       <view class="switcher-trigger" bindtap="toggleDropdown">

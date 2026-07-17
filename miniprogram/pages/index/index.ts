@@ -204,6 +204,8 @@ Page({
     }
     // 复用 setConfig：写入内存 CONFIG 并持久化为当前扫码参数
     setConfig({ organizationId: org, workspaceId: ws });
+    // 切换期间回到骨架态，避免旧组织/空间名残留
+    this.setData({ loaded: false });
     this.fetchNames();
   },
 
