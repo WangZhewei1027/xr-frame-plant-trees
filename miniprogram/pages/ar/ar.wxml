@@ -29,7 +29,21 @@
 
     <!-- 弹幕输入栏（始终可见） -->
     <view class="danmaku-bar">
-      <view class="gps-dot {{location ? 'gps-ok' : 'gps-fail'}}"></view>
+
+      <!-- GPS 调试小窗（点灯泡开关） -->
+      <view wx:if="{{showGpsDebug}}" class="gps-debug-pop">
+        <block wx:if="{{location}}">
+          <view class="gps-debug-row"><text class="gps-debug-label">纬度</text>{{location.latStr}}</view>
+          <view class="gps-debug-row"><text class="gps-debug-label">经度</text>{{location.lngStr}}</view>
+          <view class="gps-debug-row"><text class="gps-debug-label">精度</text>{{location.accuracyStr}}</view>
+          <view class="gps-debug-row"><text class="gps-debug-label">海拔</text>{{location.altitudeStr}}</view>
+        </block>
+        <view wx:else class="gps-debug-row">暂无 GPS 信号</view>
+      </view>
+
+      <view class="gps-dot-tap" bindtap="toggleGpsDebug">
+        <view class="gps-dot {{location ? 'gps-ok' : 'gps-fail'}}"></view>
+      </view>
       <input
         class="danmaku-input"
         placeholder="发个弹幕到AR世界~"

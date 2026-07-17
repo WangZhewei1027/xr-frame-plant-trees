@@ -6,6 +6,8 @@ interface LocationData {
   altitude: number;
   latStr: string;
   lngStr: string;
+  accuracyStr: string;
+  altitudeStr: string;
 }
 
 Page({
@@ -22,6 +24,7 @@ Page({
     shopCheckinEnabled: false,
     footerEnabled: false,
     compassHeading: 0,
+    showGpsDebug: false,
   },
 
   onLoad(_options: Record<string, string | undefined>) {
@@ -52,13 +55,7 @@ Page({
             res: WechatMiniprogram.OnLocationChangeCallbackResult,
           ) => {
             this.setData({
-              location: {
-                latitude: res.latitude,
-                longitude: res.longitude,
-                altitude: (res as any).altitude ?? 0,
-                latStr: res.latitude.toFixed(6),
-                lngStr: res.longitude.toFixed(6),
-              },
+              location: this._buildLocation(res),
               canSubmit: this.data.textContent.trim().length > 0,
             });
           };
@@ -109,23 +106,59 @@ Page({
     });
   },
 
+  /** 把 wx.getLocation / onLocationChange 的结果统一成页面用的 LocationData */
+  _buildLocation(res: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    altitude?: number;
+  }): LocationData {
+    const accuracy = res.accuracy;
+    const altitude = res.altitude;
+    return {
+      latitude: res.latitude,
+      longitude: res.longitude,
+      altitude: altitude ?? 0,
+      latStr: res.latitude.toFixed(6),
+      lngStr: res.longitude.toFixed(6),
+      accuracyStr:
+        typeof accuracy === "number" ? `±${accuracy.toFixed(1)}m` : "--",
+      altitudeStr:
+        typeof altitude === "number" ? `${altitude.toFixed(1)}m` : "--",
+    };
+  },
+
   getLocation() {
     wx.getLocation({
       type: "wgs84",
       success: (res) => {
         this.setData({
-          location: {
-            latitude: res.latitude,
-            longitude: res.longitude,
-            altitude: res.altitude ?? 0,
-            latStr: res.latitude.toFixed(6),
-            lngStr: res.longitude.toFixed(6),
-          },
+          location: this._buildLocation(res),
           canSubmit: this.data.textContent.trim().length > 0,
         });
       },
       fail: () => {
         this.setData({ location: null, canSubmit: false });
+      },
+    });
+  },
+
+  /** 点击 GPS 灯泡：开关调试小窗；打开时拉一次高精度定位（带海拔）刷新数据 */
+  toggleGpsDebug() {
+    const show = !this.data.showGpsDebug;
+    this.setData({ showGpsDebug: show });
+    if (!show) return;
+    wx.getLocation({
+      type: "wgs84",
+      altitude: true,
+      isHighAccuracy: true,
+      highAccuracyExpireTime: 3500,
+      success: (res) => {
+        // 弹窗可能在回调前已被关掉，数据照常更新即可
+        this.setData({
+          location: this._buildLocation(res),
+          canSubmit: this.data.textContent.trim().length > 0,
+        });
       },
     });
   },
