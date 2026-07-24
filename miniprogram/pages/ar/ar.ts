@@ -205,7 +205,7 @@ Page({
   onOrgConfigLoad(e: WechatMiniprogram.CustomEvent) {
     const { shopCheckinEnabled, footerEnabled } = e.detail;
     this.setData({
-      shopCheckinEnabled: shopCheckinEnabled !== false,
+      shopCheckinEnabled: shopCheckinEnabled === true,
       footerEnabled: !!footerEnabled,
     });
   },

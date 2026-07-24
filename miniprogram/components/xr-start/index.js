@@ -346,8 +346,8 @@ Component({
           }
 
           // 将店铺打卡/页脚开关向上抛给 ar 页面（bind:orgconfigload）。
-          // 页面用 shopCheckinEnabled !== false 判定，故透传原始配置值：
-          // 缺省(undefined)按“默认开”，显式 false 才隐藏。
+          // 与 confetti_enabled 同语义：页面用 === true 判定，
+          // 缺省(undefined)按“默认关”，显式 true 才显示。
           this.triggerEvent("orgconfigload", {
             shopCheckinEnabled: cfg.shop_checkin_enabled,
             footerEnabled: cfg.footer_enabled,
