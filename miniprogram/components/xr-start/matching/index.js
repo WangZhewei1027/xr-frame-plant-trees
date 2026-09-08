@@ -225,10 +225,23 @@ module.exports = {
                 429: "识别请求过多，稍后重试",
                 503: "匹配服务尚未就绪",
               };
+              let serverMessage = "";
+              try {
+                const body = JSON.parse(res.data);
+                if (typeof body?.error === "string") {
+                  serverMessage = body.error.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 200);
+                }
+              } catch (_) {
+                // Proxy HTML/errors must retain a readable fallback.
+              }
+              log("服务端拒绝识别", {
+                httpStatus: res.statusCode,
+                serverMessage: serverMessage || null,
+              }, "warn");
               if (res.statusCode === 429) retryDelay = 60000;
               reject(
                 new Error(
-                  messages[res.statusCode] ||
+                  serverMessage || messages[res.statusCode] ||
                     `识别服务异常（${res.statusCode}）`,
                 ),
               );

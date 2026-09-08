@@ -30,6 +30,7 @@ function load(relative, dependencies = {}) {
   return m.exports;
 }
 let response,
+  responseBody,
   uploaded,
   removed = [],
   pendingUpload,
@@ -57,7 +58,7 @@ function mockWx() {
       else
         opts.success({
           statusCode: typeof response === "number" ? response : 200,
-          data: JSON.stringify({ data: response }),
+          data: responseBody ?? JSON.stringify({ data: response }),
         });
       return {
         abort() {
@@ -265,6 +266,21 @@ test("invalid API payload fails closed", async () => {
   await x.recognizeAnchor();
   assert.equal(x.displayed.length, 0);
   assert.match(x.statuses.at(-1), /格式异常/);
+});
+test("503 exposes the backend reason and HTML errors retain the fallback", async () => {
+  try {
+    const x = instance();
+    response = 503;
+    responseBody = JSON.stringify({ error: "匹配接口未就绪，请检查数据库迁移" });
+    await x.recognizeAnchor();
+    assert.equal(x.statuses.at(-1), "匹配接口未就绪，请检查数据库迁移");
+    assert.equal(x.displayed.length, 0);
+    responseBody = "<html>upstream unavailable</html>";
+    await x.recognizeAnchor();
+    assert.equal(x.statuses.at(-1), "匹配服务尚未就绪");
+  } finally {
+    responseBody = undefined;
+  }
 });
 test("stale node with same id rejected after switching back", () => {
   const queue = load(componentPath + "assets/queue.js", {
