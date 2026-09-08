@@ -60,3 +60,10 @@ HTTP 非 200 时，小程序优先展示管理端 JSON 的 `error` 文本，并�
 - `reference_not_ready`：在管理端生成参考特征后重试。
 
 503 本身不能说明模型正在冷启动，应以实际后端错误为准。
+
+
+## 未命中分数与耗时
+
+新版本在“匹配结果”之后输出“匹配诊断”：`bestSimilarity`、`threshold`、`secondSimilarity`、`scoreGap`、`requiredMargin`、`candidateCount`、`readyReferenceCount`、`bestDistanceMeters` 和 `timingsMs`。未比较的分数或未执行阶段显示 null，实际 0 分保持 0。只记录预设字段，诊断数据不参与连续确认或 AR 展示逻辑。旧接口没有 diagnostics 时仍可正常识别。
+
+`below_threshold` 表示最高相似度低于阈值，不能从旧日志中的 `cosineSimilarity: null` 判断实际得分为 0。`model_request_ms` 是管理端到 EAS 的完整耗时，`api_total_ms` 是管理端路由内部总耗时；二者都不能直接当作 GPU 计算时间。与“收到 HTTP 响应”中的 `uploadRoundtripMs` 对照可定位慢在哪一段。

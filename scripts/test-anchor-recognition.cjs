@@ -71,9 +71,10 @@ function mockWx() {
     },
   };
 }
-function instance() {
+function instance(logs) {
   mockWx();
   const matching = load(componentPath + "matching/index.js", {
+    ...(logs ? { "./log": (event, fields) => logs.push({ event, fields }) } : {}),
     "./config": config,
     "../../../utils/supabase": {
       CONFIG: { workspaceId: "workspace" },
@@ -266,6 +267,27 @@ test("invalid API payload fails closed", async () => {
   await x.recognizeAnchor();
   assert.equal(x.displayed.length, 0);
   assert.match(x.statuses.at(-1), /格式异常/);
+});
+test("unmatched diagnostics log scores without displaying AR or leaking payload fields", async () => {
+  const logs = [];
+  const x = instance(logs);
+  response = {
+    matched: false, reason: "below_threshold", anchor: null, assets: [],
+    diagnostics: { candidate_count: 1, ready_reference_count: 1, threshold: 0.8,
+      required_margin: 0.03, best_similarity: 0, second_similarity: null, score_gap: null,
+      best_distance_meters: 12, embedding: ["secret-vector"],
+      timings_ms: { model_request_ms: 1500, api_total_ms: 2000, token: "secret-token" } },
+  };
+  await x.recognizeAnchor();
+  const d = logs.find(entry => entry.event === "匹配诊断").fields;
+  assert.equal(d.bestSimilarity, 0);
+  assert.equal(d.threshold, 0.8);
+  assert.equal(d.secondSimilarity, null);
+  assert.equal(d.timingsMs.model_request_ms, 1500);
+  assert.equal(d.timingsMs.assets_read_ms, null);
+  assert.equal(x.displayed.length, 0);
+  assert.equal(x._candidateCount, 0);
+  assert.doesNotMatch(JSON.stringify(logs), /secret-vector|secret-token/);
 });
 test("503 exposes the backend reason and HTML errors retain the fallback", async () => {
   try {

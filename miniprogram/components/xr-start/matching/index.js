@@ -286,6 +286,27 @@ module.exports = {
         assetCount: result.assets.length,
         embeddingVersion: result.embedding_version || null,
       });
+      if (result.diagnostics) {
+        const d = result.diagnostics;
+        const number = (value) => typeof value === "number" && Number.isFinite(value) ? value : null;
+        const timingsMs = {};
+        for (const stage of ["request_parse_ms", "validation_ms", "rate_limit_ms",
+          "gps_query_ms", "reference_read_ms", "model_request_ms", "ranking_ms",
+          "candidate_recheck_ms", "assets_read_ms", "matching_total_ms", "api_total_ms"]) {
+          timingsMs[stage] = number(d.timings_ms?.[stage]);
+        }
+        log("匹配诊断", {
+          candidateCount: number(d.candidate_count),
+          readyReferenceCount: number(d.ready_reference_count),
+          threshold: number(d.threshold),
+          requiredMargin: number(d.required_margin),
+          bestSimilarity: number(d.best_similarity),
+          secondSimilarity: number(d.second_similarity),
+          scoreGap: number(d.score_gap),
+          bestDistanceMeters: number(d.best_distance_meters),
+          timingsMs,
+        });
+      }
       if (!result.matched || !result.anchor?.id) {
         outcome = "not_matched";
         log("未确认匹配，重置连续确认", { previousCount: this._candidateCount || 0 });
