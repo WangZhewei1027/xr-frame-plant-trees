@@ -11,6 +11,7 @@
     height="{{renderHeight}}"
     style="width:{{width}}px;height:{{height}}px;"
     bind:orgconfigload="onOrgConfigLoad"
+    bind:recognitionstatus="onRecognitionStatus"
   />
 
   <!-- ===== 底部区域 ===== -->
@@ -26,6 +27,14 @@
         bind:navchange="onShopNavChange"
       />
     </block>
+
+    <view class="retrieval-panel">
+      <view class="retrieval-switch">
+        <button class="retrieval-option {{retrievalMode === 'gps' ? 'is-active' : ''}}" data-mode="gps" bindtap="onRetrievalModeChange" aria-label="GPS 直接过滤">GPS 直接过滤</button>
+        <button class="retrieval-option {{retrievalMode === 'anchor' ? 'is-active' : ''}}" data-mode="anchor" bindtap="onRetrievalModeChange" aria-label="匹配点识别">匹配点识别</button>
+      </view>
+      <text class="retrieval-status">{{retrievalMode === 'gps' ? '根据附近位置直接显示素材' : recognitionStatus}}</text>
+    </view>
 
     <!-- 弹幕输入栏（始终可见） -->
     <view class="danmaku-bar">

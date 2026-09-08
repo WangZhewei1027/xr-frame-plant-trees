@@ -41,6 +41,8 @@ module.exports = function (XR_CONFIG) {
 
       // InnerAudioContext 需要本地路径（远程 URL 缺少 Content-Length 会报 -11828）
       const ctx = wx.createInnerAudioContext({ useWebAudioImplement: false });
+      if (!this._pendingAudioContexts) this._pendingAudioContexts = new Set();
+      this._pendingAudioContexts.add(ctx);
       ctx.loop = meta.loop !== false;
       ctx.volume = baseVolume;
       ctx.onError((err) => {
@@ -58,6 +60,12 @@ module.exports = function (XR_CONFIG) {
       const cacheKey = `audio:saved:${audioUrl}`;
       const fs = wx.getFileSystemManager();
       const playFromPath = (p) => {
+        if (
+          this._disposed ||
+          asset._contentEpoch !== this._contentEpoch ||
+          !this._allowedAssetIds.has(asset.id)
+        )
+          return;
         ctx.src = p;
         ctx.play();
       };
@@ -109,7 +117,12 @@ module.exports = function (XR_CONFIG) {
 
       // 在相机前方随机放置耳机模型，表示音频源的 AR 空间位置
       const audioPos = this._calcForwardPos("audio");
-      if (!audioPos) return;
+      if (!audioPos) {
+        this._pendingAudioContexts.delete(ctx);
+        ctx.stop();
+        ctx.destroy();
+        return;
+      }
       const srcX = audioPos.x;
       const srcZ = audioPos.z;
       const srcY = audioPos.y;
@@ -122,6 +135,8 @@ module.exports = function (XR_CONFIG) {
         // 让一帧后再做 createElement + setData，把 GPU 上传从音频回调链中剥离
         await new Promise((r) => setTimeout(r, 0));
 
+        if (this._disposed || asset._contentEpoch !== this._contentEpoch)
+          return;
         const rootNode = scene.createElement(xr.XRNode, {
           id: `audio-node-${nodeId}`,
         });
@@ -156,6 +171,8 @@ module.exports = function (XR_CONFIG) {
           audioRefs: { ctx, baseVolume, srcX, srcY, srcZ },
         });
       } catch (e) {
+        if (this._disposed || asset._contentEpoch !== this._contentEpoch)
+          return;
         console.error("[audio] 加载耳机模型失败:", e);
         // 回退：用小立方体占位，音频仍正常播放
         const nodeId = this.nodeIdCounter++;

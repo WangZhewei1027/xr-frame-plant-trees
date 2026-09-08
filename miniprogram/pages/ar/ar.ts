@@ -25,6 +25,36 @@ Page({
     footerEnabled: false,
     compassHeading: 0,
     showGpsDebug: false,
+    retrievalMode: "gps",
+    recognitionStatus: "等待 AR 相机就绪",
+  },
+
+  onRetrievalModeChange(event: WechatMiniprogram.TouchEvent) {
+    const mode = event.currentTarget.dataset.mode;
+    if (
+      (mode !== "gps" && mode !== "anchor") ||
+      mode === this.data.retrievalMode
+    )
+      return;
+    this.setData({
+      retrievalMode: mode,
+      recognitionStatus: "等待 AR 相机就绪",
+    });
+    this.selectComponent("#main-frame")?.setRetrievalMode(mode);
+  },
+
+  onRecognitionStatus(event: WechatMiniprogram.CustomEvent) {
+    if (event.detail.mode === this.data.retrievalMode) {
+      this.setData({ recognitionStatus: event.detail.message });
+    }
+  },
+
+  onHide() {
+    this.selectComponent("#main-frame")?.pauseRetrieval();
+  },
+
+  onShow() {
+    this.selectComponent("#main-frame")?.resumeRetrieval();
   },
 
   onLoad(_options: Record<string, string | undefined>) {

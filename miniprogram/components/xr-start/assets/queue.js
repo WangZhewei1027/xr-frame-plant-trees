@@ -33,7 +33,9 @@ module.exports = function (XR_CONFIG) {
         // Transform 组件在注册时解析一次并缓存：每帧 tick（billboard/斥力/模型动画）
         // 直接用缓存引用，消除每帧 ~3N 次 getComponent 查找。
         trs: node ? node.getComponent(xr.Transform) : null,
-        billboardTrs: billboardEl ? billboardEl.getComponent(xr.Transform) : null,
+        billboardTrs: billboardEl
+          ? billboardEl.getComponent(xr.Transform)
+          : null,
         type,
         bucket,
         bornAt: Date.now(),
@@ -41,6 +43,17 @@ module.exports = function (XR_CONFIG) {
         videoRefs: o.videoRefs || null,
         imageRefs: o.imageRefs || null,
       };
+      if (o.audioRefs?.ctx) this._pendingAudioContexts?.delete(o.audioRefs.ctx);
+      // 异步加载结束时复检；快速切换回来、相同 asset id 也不能接收旧一轮节点。
+      if (
+        this._disposed ||
+        (assetId != null &&
+          (this._activePlacementEpoch !== this._contentEpoch ||
+            !this._allowedAssetIds.has(assetId)))
+      ) {
+        this._destroyNode(newEntry);
+        return newEntry;
+      }
       this.nodeList.push(newEntry);
       // 音频子列表：tickAudioVolume 每帧直接用，免去 nodeList.filter 的每帧分配
       if (newEntry.audioRefs) {

@@ -200,3 +200,8 @@ export function supabaseRpc<T = any>(
     });
   });
 }
+
+/** 小程序公开 API key；仅用于允许公开访问的空间，不包含服务端密钥。 */
+export function getPublicApiHeaders(): { apikey: string } {
+  return { apikey: SUPABASE_KEY };
+}

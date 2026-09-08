@@ -161,3 +161,43 @@ page {
   width: 40rpx;
   height: 40rpx;
 }
+
+/* 与 AR 画面保持足够对比，使用原生按钮提供明确的触摸区域。 */
+.retrieval-panel {
+  padding: 16rpx 24rpx 12rpx;
+  background: rgba(30, 30, 30, 0.88);
+}
+.retrieval-switch {
+  display: flex;
+  padding: 6rpx;
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.1);
+}
+.retrieval-option {
+  flex: 1;
+  margin: 0;
+  padding: 0 12rpx;
+  min-height: 88rpx;
+  line-height: 88rpx;
+  font-size: 27rpx;
+  font-weight: 500;
+  color: #ddd;
+  border-radius: 12rpx;
+  background: transparent;
+}
+.retrieval-option::after {
+  border: none;
+}
+.retrieval-option.is-active {
+  background: #fff;
+  color: #222;
+  font-weight: 600;
+}
+.retrieval-status {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 23rpx;
+  line-height: 34rpx;
+  color: #ddd;
+  overflow-wrap: break-word;
+}

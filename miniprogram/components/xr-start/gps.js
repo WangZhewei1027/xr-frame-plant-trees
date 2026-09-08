@@ -1,6 +1,7 @@
 /** GPS 定位相关方法 */
 module.exports = {
   updateGPS({ latitude, longitude, accuracy }) {
+    if (this._disposed) return;
     const isFirst = !this.gpsReady;
     this.currentGPS = { latitude, longitude, accuracy };
     this.gpsReady = true;
@@ -18,7 +19,8 @@ module.exports = {
    * 避免首批素材因相机 worldMatrix 未稳定（forward 退化为世界 +Z）而落到身后。
    */
   _maybeStartFirstFetch() {
-    if (this._firstFetchStarted) return;
+    if (this._disposed || this._retrievalPaused || this._firstFetchStarted)
+      return;
     if (!this.gpsReady || !this._arReady) return;
     this._firstFetchStarted = true;
     const delay =
@@ -26,6 +28,7 @@ module.exports = {
         ? require("./config").firstFetchDelayMs
         : 1000) | 0;
     this._firstFetchTimer = setTimeout(() => {
+      if (this._disposed || this._retrievalPaused) return;
       this.fetchNearbyAssets();
       this.fetchHugeAssets();
     }, delay);
@@ -35,7 +38,9 @@ module.exports = {
     wx.startLocationUpdate({
       type: "wgs84",
       success: () => {
-        wx.onLocationChange((res) => this.updateGPS(res));
+        if (this._disposed) return;
+        this._gpsListener = (res) => this.updateGPS(res);
+        wx.onLocationChange(this._gpsListener);
         this.locationWatchId = true;
       },
       fail: () => this.getLocationOnce(),

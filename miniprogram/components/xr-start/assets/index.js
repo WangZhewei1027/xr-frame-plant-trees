@@ -23,7 +23,10 @@ module.exports = function (XR_CONFIG) {
     ...videoMethods,
 
     async fetchNearbyAssets() {
+      if (this._disposed || this._retrievalPaused) return;
+      if (this.retrievalMode === "anchor") return this.recognizeAnchor();
       if (this.isFetchingAssets || !this.currentGPS) return;
+      const epoch = this._modeEpoch;
       this.isFetchingAssets = true;
 
       try {
@@ -35,6 +38,7 @@ module.exports = function (XR_CONFIG) {
           p_organization_id: CONFIG.organizationId,
         });
 
+        if (this._disposed || epoch !== this._modeEpoch) return;
         if (statusCode === 200 && Array.isArray(data)) {
           this.displayAssets(
             data.filter(
@@ -51,7 +55,7 @@ module.exports = function (XR_CONFIG) {
       } catch (err) {
         console.error("[fetch] 请求失败:", err);
       } finally {
-        this.isFetchingAssets = false;
+        if (epoch === this._modeEpoch) this.isFetchingAssets = false;
       }
     },
 
@@ -67,12 +71,16 @@ module.exports = function (XR_CONFIG) {
      *   3. 逐个串行放置，_registerNode 按类型归桶并触发该桶容量检查
      */
     displayAssets(assets) {
+      if (this._disposed || this._retrievalPaused) return;
+      assets = assets.map((a) => ({ ...a, _contentEpoch: this._contentEpoch }));
+      for (const a of assets) this._allowedAssetIds.add(a.id);
       // 预加载（scene + 头像/气泡纹理）未就绪时，先暂存，等 flushPendingDisplayAssets 调用
       if (!this._preloadDone) {
         const merged = (this._pendingDisplayAssets || []).concat(assets);
         // 限制暂存上限：用户在预加载期间快速移动可能触发多次 fetch，
         // 累积过多 asset 会让 preload 完成后串行放置队列工作数秒。仅保留最新一批最相关的。
-        const lightCap = (XR_CONFIG.buckets && XR_CONFIG.buckets.light.cap) || 20;
+        const lightCap =
+          (XR_CONFIG.buckets && XR_CONFIG.buckets.light.cap) || 20;
         const MAX_PENDING = lightCap * 2;
         this._pendingDisplayAssets =
           merged.length > MAX_PENDING ? merged.slice(-MAX_PENDING) : merged;
@@ -141,7 +149,11 @@ module.exports = function (XR_CONFIG) {
       const baseStagger = XR_CONFIG.placeStaggerMs || 40;
       while (this._placeQueue && this._placeQueue.length > 0) {
         const asset = this._placeQueue.shift();
-        await this._placeAsset(asset);
+        try {
+          await this._placeAsset(asset);
+        } catch (error) {
+          console.warn("[assets] 放置失败", error);
+        }
         // 模型放置触发 GPU 资源上传，给主线程多一点喘息时间；
         // 其他轻量类型（text/image/audio/video）用配置中的基础值即可。
         const stagger =
@@ -186,6 +198,13 @@ module.exports = function (XR_CONFIG) {
 
     /** 按 file_type 分发到对应的放置方法 */
     async _placeAsset(asset) {
+      if (
+        this._disposed ||
+        asset._contentEpoch !== this._contentEpoch ||
+        !this._allowedAssetIds.has(asset.id)
+      )
+        return;
+      this._activePlacementEpoch = asset._contentEpoch;
       if (asset.file_type === "model") await this._placeModelAsset(asset);
       else if (asset.file_type === "text") this._placeTextAsset(asset);
       else if (asset.file_type === "image") await this._placeImageAsset(asset);

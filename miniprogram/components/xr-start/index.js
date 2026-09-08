@@ -2,6 +2,7 @@ const XR_CONFIG = require("./config");
 const preload = require("./preload");
 const gps = require("./gps");
 const navigation = require("./navigation");
+const matching = require("./matching/index");
 const { CONFIG, supabaseGet } = require("../../utils/supabase");
 
 const createAssetsMethods = require("./assets/index");
@@ -19,6 +20,13 @@ const confettiMethods = createConfettiMethods(XR_CONFIG);
 /** 组件 attach 时的实例字段初始值 */
 function buildInitialState() {
   return {
+    retrievalMode: "gps",
+    _modeEpoch: 0,
+    _contentEpoch: 0,
+    _allowedAssetIds: new Set(),
+    _nextRecognitionAt: 0,
+    _disposed: false,
+    _retrievalPaused: false,
     nodeIdCounter: 0,
     nodeList: [], // [{ assetId, node, billboardEl, trs, billboardTrs, type, bucket, bornAt, audioRefs, videoRefs, imageRefs, modelAnim? }]
     // 音频节点子列表（audioRefs 非空的 entry），由 queue 在注册/销毁时维护，
@@ -99,14 +107,14 @@ Component({
       this.fetchOrgStyle();
     },
     detached() {
-      if (this.locationWatchId) {
-        wx.stopLocationUpdate();
-        this.locationWatchId = null;
-      }
+      this.pauseRetrieval();
+      this._disposed = true;
+      clearTimeout(this._firstFetchTimer);
+      if (this._gpsListener) wx.offLocationChange(this._gpsListener);
       this.flyingDanmakus = [];
       for (const entry of this.nodeList) {
         try {
-          this.shadowRoot?.removeChild(entry.node);
+          this._destroyNode(entry);
         } catch (_) {}
       }
       this.nodeList = [];
@@ -146,6 +154,7 @@ Component({
   methods: {
     // ─── GPS ────────────────────────────────────────
     ...gps,
+    ...matching,
 
     // ─── 远程素材（含队列管理 + text/model/image/audio 放置） ──
     ...assetsMethods,
@@ -203,6 +212,7 @@ Component({
         this.loadProfileTextures(xrScene),
         this.loadBubbleTextures(xrScene),
       ]);
+      if (this._disposed) return;
       this._preloadDone = true;
       // 预加载期间 GPS 触发的 fetch 已把 assets 暂存到 _pendingDisplayAssets，统一刷出
       this.flushPendingDisplayAssets();
@@ -268,6 +278,12 @@ Component({
         if (!trs) continue;
         this.FACING.set(trs.worldPosition).sub(camPos, this.FACING);
         xr.Quaternion.lookRotation(this.FACING, this.UP, trs.quaternion);
+      }
+
+      if (this._retrievalPaused || this._disposed) return;
+      if (this.retrievalMode === "anchor") {
+        if (Date.now() >= this._nextRecognitionAt) this.recognizeAnchor();
+        return;
       }
 
       // 计算参考点到当前相机位置的 x/z 净位移向量长度

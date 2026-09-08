@@ -78,6 +78,13 @@ module.exports = function (XR_CONFIG) {
      * 从 asset 表拉取 is_huge=true 的模型，存入 _pendingHugeAssets 后尝试放置。
      */
     async fetchHugeAssets() {
+      if (
+        this._disposed ||
+        this._retrievalPaused ||
+        this.retrievalMode === "anchor"
+      )
+        return;
+      const epoch = this._modeEpoch;
       if (this._isFetchingHuge || !this.currentGPS) return;
       // organizationId 必须有；workspaceId 可选（为 null/undefined 时 RPC 返回该 org 下全部 workspace 的巨型模型）
       if (!CONFIG.organizationId) {
@@ -97,6 +104,7 @@ module.exports = function (XR_CONFIG) {
           console.log(
             `[huge] fetch结果: statusCode=${statusCode}, 条数=${Array.isArray(data) ? data.length : "N/A"}`,
           );
+        if (this._disposed || epoch !== this._modeEpoch) return;
         if (statusCode === 200 && Array.isArray(data)) {
           XR_CONFIG.debugLog &&
             console.log(
@@ -122,7 +130,7 @@ module.exports = function (XR_CONFIG) {
       } catch (err) {
         console.error("[huge] 获取巨型模型失败:", err);
       } finally {
-        this._isFetchingHuge = false;
+        if (epoch === this._modeEpoch) this._isFetchingHuge = false;
       }
     },
 
@@ -131,6 +139,12 @@ module.exports = function (XR_CONFIG) {
      * 需要 scene、camera、GPS 均就绪；否则保留 pending，由 tickHugeModels 重试。
      */
     _placeHugeAssets() {
+      if (
+        this._disposed ||
+        this._retrievalPaused ||
+        this.retrievalMode === "anchor"
+      )
+        return;
       if (!this._pendingHugeAssets || this._pendingHugeAssets.length === 0)
         return;
       if (!this.scene || !this.getCamTransform()) {
@@ -186,6 +200,13 @@ module.exports = function (XR_CONFIG) {
      * 位置通过 GPS 方位角 + 罗盘航向映射到 XR 世界坐标。
      */
     async _placeHugeModel(asset) {
+      if (
+        this._disposed ||
+        this._retrievalPaused ||
+        this.retrievalMode === "anchor"
+      )
+        return;
+      const epoch = this._contentEpoch;
       const xr = wx.getXrFrameSystem();
       const scene = this.scene;
       const camTransform = this.getCamTransform();
@@ -243,6 +264,7 @@ module.exports = function (XR_CONFIG) {
         // 让一帧再做场景实例化，把网络回调与 GPU 上传切开
         await new Promise((r) => setTimeout(r, 0));
 
+        if (this._disposed || epoch !== this._contentEpoch) return;
         const rootNode = scene.createElement(xr.XRNode, {
           id: `huge-model-node-${nodeId}`,
         });
@@ -261,6 +283,12 @@ module.exports = function (XR_CONFIG) {
         // setData 引发 GPU 上传，让出一帧再算包围盒
         await new Promise((r) => setTimeout(r, 0));
 
+        if (this._disposed || epoch !== this._contentEpoch) {
+          try {
+            this.shadowRoot.removeChild(rootNode);
+          } catch (_) {}
+          return;
+        }
         // 先 normalize 最长边到 1m，再乘以放大倍数。
         // 包围盒按 URL 缓存：巨型 GLB 的 calcTotalBoundBox 最贵，同 URL 只算一次。
         let size = __hugeUrlToBoundSize.get(asset.file_url);
@@ -309,11 +337,7 @@ module.exports = function (XR_CONFIG) {
             if (a.file_url) protectedUrls.add(a.file_url);
           }
         }
-        __trimHugeCache(
-          scene,
-          XR_CONFIG.maxCachedHugeUrls || 3,
-          protectedUrls,
-        );
+        __trimHugeCache(scene, XR_CONFIG.maxCachedHugeUrls || 3, protectedUrls);
       } catch (e) {
         console.error("[huge] 加载巨型模型失败:", asset.file_url, e);
       }
