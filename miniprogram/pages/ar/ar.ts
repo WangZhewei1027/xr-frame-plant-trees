@@ -27,6 +27,10 @@ Page({
     showGpsDebug: false,
     retrievalMode: "gps",
     recognitionStatus: "等待 AR 相机就绪",
+    recognitionFramePath: "",
+    recognitionFrameInfo: "",
+    recognitionFrameRequest: "",
+    showRecognitionPreview: false,
   },
 
   onRetrievalModeChange(event: WechatMiniprogram.TouchEvent) {
@@ -49,12 +53,40 @@ Page({
     }
   },
 
+  onRecognitionFrame(event: WechatMiniprogram.CustomEvent) {
+    const frame = event.detail;
+    const score = typeof frame.bestSimilarity === "number" ? frame.bestSimilarity.toFixed(3) : "未提供";
+    const threshold = typeof frame.threshold === "number" ? frame.threshold.toFixed(2) : "未提供";
+    this.setData({
+      recognitionFramePath: typeof frame.path === "string" ? frame.path : "",
+      recognitionFrameInfo: frame.path
+        ? `${frame.width || "?"} × ${frame.height || "?"} · 旋转 ${frame.rotation || 0}° · 相似度 ${score} / 阈值 ${threshold}`
+        : "",
+      recognitionFrameRequest: frame.requestId || "",
+    });
+  },
+
+  onPreviewRecognitionFrame() {
+    if (!this.data.recognitionFramePath || this.data.retrievalMode !== "anchor") return;
+    this.selectComponent("#main-frame")?.pauseRetrieval();
+    this.setData({ showRecognitionPreview: true });
+  },
+
+  onCloseRecognitionPreview() {
+    this.setData({ showRecognitionPreview: false });
+    this.selectComponent("#main-frame")?.resumeRetrieval();
+  },
+
+  onRecognitionPreviewError() {
+    this.setData({ recognitionFrameInfo: "图片已失效，请关闭后重新识别一次" });
+  },
+
   onHide() {
     this.selectComponent("#main-frame")?.pauseRetrieval();
   },
 
   onShow() {
-    this.selectComponent("#main-frame")?.resumeRetrieval();
+    if (!this.data.showRecognitionPreview) this.selectComponent("#main-frame")?.resumeRetrieval();
   },
 
   onLoad(_options: Record<string, string | undefined>) {

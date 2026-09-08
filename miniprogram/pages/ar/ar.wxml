@@ -12,6 +12,7 @@
     style="width:{{width}}px;height:{{height}}px;"
     bind:orgconfigload="onOrgConfigLoad"
     bind:recognitionstatus="onRecognitionStatus"
+    bind:recognitionframe="onRecognitionFrame"
   />
 
   <!-- ===== 底部区域 ===== -->
@@ -34,6 +35,7 @@
         <button class="retrieval-option {{retrievalMode === 'anchor' ? 'is-active' : ''}}" data-mode="anchor" bindtap="onRetrievalModeChange" aria-label="匹配点识别">匹配点识别</button>
       </view>
       <text class="retrieval-status">{{retrievalMode === 'gps' ? '根据附近位置直接显示素材' : recognitionStatus}}</text>
+      <button wx:if="{{retrievalMode === 'anchor'}}" class="recognition-preview-button" disabled="{{!recognitionFramePath}}" bindtap="onPreviewRecognitionFrame">查看识别画面</button>
     </view>
 
     <!-- 弹幕输入栏（始终可见） -->
@@ -74,5 +76,17 @@
       </view>
     </view>
 
+  </view>
+  <view wx:if="{{showRecognitionPreview}}" class="recognition-preview" aria-role="dialog" aria-label="识别画面预览">
+    <view class="recognition-preview-heading">
+      <text class="recognition-preview-title">实际上传画面</text>
+      <text class="recognition-preview-hint">识别已暂停。检查图片是否旋转、偏色，以及是否与参考图内容一致。</text>
+    </view>
+    <image class="recognition-preview-image" src="{{recognitionFramePath}}" mode="aspectFit" show-menu-by-longpress="{{true}}" binderror="onRecognitionPreviewError" aria-label="最近一张已完成识别的原始上传图片" />
+    <view class="recognition-preview-footer">
+      <text class="recognition-preview-info">{{recognitionFrameInfo}}</text>
+      <text class="recognition-preview-request">请求 {{recognitionFrameRequest}}</text>
+      <button class="recognition-preview-close" bindtap="onCloseRecognitionPreview">关闭并继续识别</button>
+    </view>
   </view>
 </view>

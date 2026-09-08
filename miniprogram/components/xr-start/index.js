@@ -109,6 +109,7 @@ Component({
     detached() {
       this.pauseRetrieval();
       this._disposed = true;
+      this.clearRecognitionFrame();
       clearTimeout(this._firstFetchTimer);
       if (this._gpsListener) wx.offLocationChange(this._gpsListener);
       this.flyingDanmakus = [];

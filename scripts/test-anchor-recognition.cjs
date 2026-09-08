@@ -34,7 +34,8 @@ let response,
   uploaded,
   removed = [],
   pendingUpload,
-  deferredLocation;
+  deferredLocation,
+  capturePath = "/tmp/frame.jpg";
 const config = {
   apiBaseUrl: "https://ar.example.test",
   intervalMs: 0,
@@ -81,7 +82,10 @@ function instance(logs) {
       getPublicApiHeaders: () => { throw new Error("Recognition must not request credentials"); },
     },
     "./capture": {
-      captureCamera: async () => "/tmp/frame.jpg",
+      captureCamera: async (_scene, onInfo) => {
+        onInfo?.({ rawWidth: 1920, rawHeight: 1080, width: 640, height: 360, rotation: 0, uvOrder: "uv" });
+        return capturePath;
+      },
       removeTempFile: (p) => {
         if (p) removed.push(p);
       },
@@ -99,9 +103,11 @@ function instance(logs) {
       _hugeNodeList: [],
       _seenAssets: new Map(),
       statuses: [],
+      frames: [],
       displayed: [],
-      triggerEvent(_, detail) {
-        this.statuses.push(detail.message);
+      triggerEvent(name, detail) {
+        if (name === "recognitionframe") this.frames.push(detail);
+        else this.statuses.push(detail.message);
       },
       updateGPS(gps) {
         this.currentGPS = gps;
@@ -359,6 +365,66 @@ test("old GPS RPC result is discarded after switching", async () => {
   await run;
   assert.equal(rendered, false);
 });
+test("preview keeps the exact completed upload and cleans replacement, cancellation and disposal", async () => {
+  config.debugFramePreview = true;
+  try {
+    removed = [];
+    capturePath = "/tmp/first-preview.jpg";
+    const x = instance();
+    response = { matched: false, reason: "below_threshold", anchor: null, assets: [], diagnostics: { best_similarity: 0.268, threshold: 0.8 } };
+    await x.recognizeAnchor();
+    assert.equal(x._recognitionFrame.path, uploaded.filePath);
+    assert.equal(x._recognitionFrame.bestSimilarity, 0.268);
+    assert.equal(x._recognitionFrame.width, 640);
+    assert.equal(x._recognitionFrame.height, 360);
+    assert.ok(!removed.includes(capturePath));
+    const firstFrame = x._recognitionFrame;
+    x.pauseRetrieval();
+    assert.equal(x._recognitionFrame, firstFrame);
+    x._retrievalPaused = false;
+    capturePath = "/tmp/second-preview.jpg";
+    await x.recognizeAnchor();
+    assert.ok(removed.includes(firstFrame.path));
+    assert.equal(x._recognitionFrame.path, uploaded.filePath);
+    assert.ok(!removed.includes(capturePath));
+    capturePath = "/tmp/cancelled-preview.jpg";
+    response = "pending";
+    const inFlight = x.recognizeAnchor();
+    await flush();
+    x.pauseRetrieval();
+    await inFlight;
+    assert.ok(removed.includes(capturePath));
+    assert.equal(x._recognitionFrame.path, "/tmp/second-preview.jpg");
+    assert.equal(x.frames.filter(frame => frame.path).length, 2);
+    x._disposed = true;
+    x.clearRecognitionFrame();
+    assert.ok(removed.includes("/tmp/second-preview.jpg"));
+    assert.equal(x._recognitionFrame, null);
+  } finally {
+    config.debugFramePreview = false;
+    capturePath = "/tmp/frame.jpg";
+  }
+});
+test("turning off frame preview preserves immediate temporary-file cleanup", async () => {
+  config.debugFramePreview = false;
+  removed = [];
+  const x = instance();
+  response = matched();
+  await x.recognizeAnchor();
+  assert.equal(x._recognitionFrame, undefined);
+  assert.ok(removed.includes(uploaded.filePath));
+});
+test("clockwise portrait correction preserves all pixels of a landscape camera frame", () => {
+  const { convertFrame } = load(componentPath + "matching/capture.js");
+  const raw = { width: 4, height: 2,
+    yBuffer: Uint8Array.from([10,20,30,40,50,60,70,80]).buffer,
+    uvBuffer: Uint8Array.from([128,128,128,128]).buffer };
+  const corrected = convertFrame(raw);
+  assert.equal(corrected.width, 2);
+  assert.equal(corrected.height, 4);
+  const pixels = Array.from(corrected.data).filter((_, i) => i % 4 === 0);
+  assert.deepEqual(pixels, [50,10,60,20,70,30,80,40]);
+});
 test("YUV neutral pixels, rotation and malformed layout", () => {
   const { convertFrame } = load(componentPath + "matching/capture.js");
   const raw = {
@@ -367,7 +433,7 @@ test("YUV neutral pixels, rotation and malformed layout", () => {
     yBuffer: Uint8Array.from([0, 64, 128, 255]).buffer,
     uvBuffer: Uint8Array.from([128, 128]).buffer,
   };
-  const a = convertFrame(raw);
+  const a = convertFrame(raw, { rotation: 0 });
   assert.deepEqual(
     Array.from(a.data.slice(0, 8)),
     [0, 0, 0, 255, 64, 64, 64, 255],

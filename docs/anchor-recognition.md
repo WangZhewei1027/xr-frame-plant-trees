@@ -37,9 +37,9 @@ AR 页底部可切换「GPS 直接过滤」和「匹配点识别」，默认 GPS
 
 ## 相机与真机验证
 
-使用 scene.ar.getARRawData() 读取不含虚拟物体的 YUV420 帧，缩小最长边到 640 像素，在离屏 2D Canvas 转 JPEG。上传结束/取消后删除临时文件。当前转换支持紧密排列、无 stride padding 的半平面 YUV420，默认 NV12 / full range；缓冲长度不符会报错。
+使用 scene.ar.getARRawData() 读取不含虚拟物体的 YUV420 帧，缩小最长边到 640 像素，在离屏 2D Canvas 转 JPEG。默认开启 `debugFramePreview`，只保留最近一次已完成识别的上传 JPEG，供“查看识别画面”核对；新结果替换旧文件，切换模式或离开 AR 页面时清理。失败、取消的上传文件立即清理；关闭该配置后，所有上传文件均在本轮结束时清理。当前转换支持紧密排列、无 stride padding 的半平面 YUV420，默认 NV12 / full range；缓冲长度不符会报错。
 
-原始图像方向、UV 顺序、色彩范围和离屏 Canvas 导出支持需要 iOS / Android 真机验证。config.rotation 可设顺时针 0/90/180/270，uvOrder 可设 uv/vu。若设备输出带 stride 或不同色彩范围，需要按设备返回数据扩展转换；不要用包含 AR 叠层的截图替代。
+原始图像方向、UV 顺序、色彩范围和离屏 Canvas 导出支持需要 iOS / Android 真机验证。当前竖屏真机预览确认原始画面逆时针偏转 90°，因此默认 `config.rotation = 90`，在生成上传 JPEG 前顺时针纠正。`config.rotation` 可设顺时针 0/90/180/270，`uvOrder` 可设 uv/vu。该值针对已验证的竖屏场景，其他设备和横屏需通过预览重新核对。若设备输出带 stride 或不同色彩范围，需要按设备返回数据扩展转换；不要用包含 AR 叠层的截图替代。
 
 真机验收：
 
@@ -67,3 +67,9 @@ HTTP 非 200 时，小程序优先展示管理端 JSON 的 `error` 文本，并�
 新版本在“匹配结果”之后输出“匹配诊断”：`bestSimilarity`、`threshold`、`secondSimilarity`、`scoreGap`、`requiredMargin`、`candidateCount`、`readyReferenceCount`、`bestDistanceMeters` 和 `timingsMs`。未比较的分数或未执行阶段显示 null，实际 0 分保持 0。只记录预设字段，诊断数据不参与连续确认或 AR 展示逻辑。旧接口没有 diagnostics 时仍可正常识别。
 
 `below_threshold` 表示最高相似度低于阈值，不能从旧日志中的 `cosineSimilarity: null` 判断实际得分为 0。`model_request_ms` 是管理端到 EAS 的完整耗时，`api_total_ms` 是管理端路由内部总耗时；二者都不能直接当作 GPU 计算时间。与“收到 HTTP 响应”中的 `uploadRoundtripMs` 对照可定位慢在哪一段。
+
+### 核对实际上传画面
+
+在匹配模式完成一次识别后，点击“查看识别画面”。预览直接显示该轮上传的同一张 JPEG，包含请求编号、尺寸、旋转角度、最佳相似度和阈值；预览期间暂停识别，关闭后继续。取图日志同时记录原始帧与输出尺寸、旋转角度和 UV 顺序。
+
+方向纠正作用于模型收到的像素，而非仅旋转预览界面。修复后先在真机确认图像正向，再比较同一画面的新相似度；目前不调整匹配阈值，不能仅凭方向修复断言匹配分数已提高。

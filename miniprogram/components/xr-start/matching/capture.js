@@ -69,11 +69,19 @@ function removeTempFile(filePath) {
   } catch (_) {}
 }
 
-async function captureCamera(scene) {
+async function captureCamera(scene, onFrameInfo) {
   if (!scene?.ar?.getARRawData || !wx.createOffscreenCanvas) {
     throw new Error("当前微信不支持 AR 原始取图，请升级并使用真机");
   }
-  const frame = convertFrame(scene.ar.getARRawData());
+  const raw = scene.ar.getARRawData();
+  const frame = convertFrame(raw);
+  if (typeof onFrameInfo === "function") {
+    onFrameInfo({
+      rawWidth: raw.width, rawHeight: raw.height,
+      width: frame.width, height: frame.height,
+      rotation: config.rotation || 0, uvOrder: config.uvOrder || "uv",
+    });
+  }
   const canvas = wx.createOffscreenCanvas({
     type: "2d",
     width: frame.width,

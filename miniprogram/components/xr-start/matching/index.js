@@ -35,6 +35,24 @@ function locate() {
 }
 
 module.exports = {
+  clearRecognitionFrame() {
+    removeTempFile(this._recognitionFrame?.path);
+    this._recognitionFrame = null;
+    if (!this._disposed) this.triggerEvent("recognitionframe", { path: "" });
+  },
+
+  _retainRecognitionFrame(filePath, info, result, requestId) {
+    if (!config.debugFramePreview) return;
+    const previous = this._recognitionFrame?.path;
+    this._recognitionFrame = {
+      path: filePath, requestId, ...info,
+      bestSimilarity: result.diagnostics?.best_similarity ?? result.anchor?.cosine_similarity ?? null,
+      threshold: result.diagnostics?.threshold ?? null,
+    };
+    if (previous && previous !== filePath) removeTempFile(previous);
+    this.triggerEvent("recognitionframe", this._recognitionFrame);
+  },
+
   _recognitionStatus(message) {
     matchLog("状态", { mode: this.retrievalMode, message });
     if (!this._disposed)
@@ -101,6 +119,7 @@ module.exports = {
     matchLog("切换模式", { from: this.retrievalMode, to: mode });
     this._cancelRetrieval();
     this._clearRemoteAssets();
+    this.clearRecognitionFrame();
     this.retrievalMode = mode;
     this._recognitionStatus(
       mode === "anchor" ? "等待 AR 相机就绪" : "根据附近位置直接显示素材",
@@ -175,6 +194,7 @@ module.exports = {
       !this._disposed && !this._retrievalPaused && this._modeEpoch === epoch;
     this._recognizing = true;
     let filePath;
+    let frameInfo = {};
     let retryDelay = config.intervalMs;
     try {
       this._recognitionStatus("正在定位…");
@@ -191,9 +211,9 @@ module.exports = {
       this._recognitionStatus("正在识别，请将镜头朝向预设地点…");
       phase = "capture";
       const captureStartedAt = Date.now();
-      filePath = await captureCamera(this.scene);
+      filePath = await captureCamera(this.scene, (info) => { frameInfo = info; });
       if (!current()) return;
-      log("相机取图完成", { captureMs: Date.now() - captureStartedAt });
+      log("相机取图完成", { captureMs: Date.now() - captureStartedAt, ...frameInfo });
       phase = "upload";
       const uploadStartedAt = Date.now();
       log("上传识别请求", { path: "/api/miniapp/anchors/recognize" });
@@ -274,6 +294,7 @@ module.exports = {
       });
       if (!current()) return;
       phase = "match";
+      this._retainRecognitionFrame(filePath, frameInfo, result, requestId);
       log("匹配结果", {
         matched: result.matched,
         reason: result.reason || null,
@@ -378,7 +399,7 @@ module.exports = {
       this._clearRemoteAssets();
       this._recognitionStatus(error.message || "识别失败，请稍后重试");
     } finally {
-      removeTempFile(filePath);
+      if (filePath !== this._recognitionFrame?.path) removeTempFile(filePath);
       log("本轮结束", {
         outcome: current() ? outcome : "cancelled",
         nextAttemptAfterMs: current() ? retryDelay : null,
