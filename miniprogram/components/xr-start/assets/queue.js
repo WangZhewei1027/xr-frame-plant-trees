@@ -42,13 +42,15 @@ module.exports = function (XR_CONFIG) {
         audioRefs: o.audioRefs || null,
         videoRefs: o.videoRefs || null,
         imageRefs: o.imageRefs || null,
+        textRefs: o.textRefs || null,
       };
       if (o.audioRefs?.ctx) this._pendingAudioContexts?.delete(o.audioRefs.ctx);
       // 异步加载结束时复检；快速切换回来、相同 asset id 也不能接收旧一轮节点。
       if (
-        this._disposed ||
+        this._disposed || this._retrievalPaused ||
+        (this.retrievalMode === "anchor" && (assetId == null || !this._matchedAnchorId)) ||
         (assetId != null &&
-          (this._activePlacementEpoch !== this._contentEpoch ||
+          ((o.contentEpoch ?? this._activePlacementEpoch) !== this._contentEpoch ||
             !this._allowedAssetIds.has(assetId)))
       ) {
         this._destroyNode(newEntry);
@@ -204,9 +206,27 @@ module.exports = function (XR_CONFIG) {
 
     /** 统一销毁一个 nodeList 条目：移除场景节点 + 调该类型 descriptor.dispose 释放资源。 */
     _destroyNode(entry) {
+      if (!entry || entry._destroyed) return;
+      entry._destroyed = true;
+      const node = entry.node;
+      const xr = this.xr || wx.getXrFrameSystem();
+      // 清空文字并隐藏子树，再离开场景，避免文字绘制资源晚于父节点移除。
+      const hide = (element) => {
+        try { element?.getComponent(xr.Transform)?.setData({ visible: false }); } catch (_) {}
+        try { if (xr.Text) element?.getComponent(xr.Text)?.setData({ value: "" }); } catch (_) {}
+      };
+      try { entry.textRefs?.textEl?.setAttribute("value", ""); } catch (_) {}
+      hide(node);
+      try { node?.dfs?.(hide); } catch (_) {}
       try {
-        this.shadowRoot.removeChild(entry.node);
-      } catch (_) {}
+        (node?.parent || this.shadowRoot)?.removeChild(node);
+      } catch (error) {
+        console.warn("[assets] 移除节点失败", error);
+      }
+      // 这里只处理自己创建的动态节点；release 触发 Text 等组件的资源回收。
+      try { node?.release?.(); } catch (error) {
+        console.warn("[assets] 释放节点失败", error);
+      }
       if (entry.audioRefs && this._audioEntries) {
         const ai = this._audioEntries.indexOf(entry);
         if (ai !== -1) this._audioEntries.splice(ai, 1);

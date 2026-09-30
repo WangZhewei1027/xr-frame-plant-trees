@@ -98,7 +98,7 @@ function buildInitialState() {
 Component({
   behaviors: [require("../common/share-behavior").default],
   properties: { a: Number },
-  data: { loaded: false, arReady: false },
+  data: { loaded: false, arReady: false, retrievalMode: "gps" },
 
   lifetimes: {
     attached() {
@@ -109,6 +109,7 @@ Component({
     detached() {
       this.pauseRetrieval();
       this._disposed = true;
+      this.disposeRecognitionCapture();
       this.clearRecognitionFrame();
       clearTimeout(this._firstFetchTimer);
       if (this._gpsListener) wx.offLocationChange(this._gpsListener);
@@ -241,6 +242,7 @@ Component({
           "confettiEnabled=",
           this._confettiEnabled,
         );
+      if (this.retrievalMode === "anchor" || this._retrievalPaused || this._disposed) return;
       if (!this._assetsLoaded) return;
       if (this._confettiEnabled !== true) return;
       this.startRandomConfetti();
@@ -258,6 +260,7 @@ Component({
     handleTick() {
       const xr = this.xr || (this.xr = wx.getXrFrameSystem());
       const camTransform = this.getCamTransform();
+      this.sampleCaptureMotion(camTransform);
       if (!camTransform) return;
 
       const camPos = camTransform.position;
@@ -385,17 +388,20 @@ Component({
     },
 
     placeNode() {
+      // GPS 模式保留点击种树；匹配模式只能由已确认的 anchor 返回素材。
+      this.scene.event.addOnce("touchstart", this.placeNode.bind(this));
+      if (this.retrievalMode === "anchor" || this._retrievalPaused || this._disposed) return;
       try {
         const xr = wx.getXrFrameSystem();
         const el = this.scene.createElement(xr.XRGLTF);
         this.shadowRoot.addChild(el);
+        this._registerNode(null, el, null, { type: "model" });
         el.getComponent(xr.GLTF).setData({ model: this.gltfModel });
         this.scene.ar.placeHere(el, true);
         el.getComponent(xr.Transform).scale.setValue(0.3, 0.3, 0.3);
       } catch (e) {
         console.error("placeNode error", e);
       }
-      this.scene.event.addOnce("touchstart", this.placeNode.bind(this));
     },
   },
 });

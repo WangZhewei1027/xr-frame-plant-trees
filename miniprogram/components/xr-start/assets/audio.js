@@ -135,8 +135,7 @@ module.exports = function (XR_CONFIG) {
         // 让一帧后再做 createElement + setData，把 GPU 上传从音频回调链中剥离
         await new Promise((r) => setTimeout(r, 0));
 
-        if (this._disposed || asset._contentEpoch !== this._contentEpoch)
-          return;
+        if (!this._isAssetPlacementCurrent(asset)) return;
         const rootNode = scene.createElement(xr.XRNode, {
           id: `audio-node-${nodeId}`,
         });
@@ -168,11 +167,11 @@ module.exports = function (XR_CONFIG) {
         // 直接存储世界坐标，避免依赖 worldPosition（多节点时可能不稳定）
         this._registerNode(asset.id, rootNode, null, {
           type: "audio",
+          contentEpoch: asset._contentEpoch,
           audioRefs: { ctx, baseVolume, srcX, srcY, srcZ },
         });
       } catch (e) {
-        if (this._disposed || asset._contentEpoch !== this._contentEpoch)
-          return;
+        if (!this._isAssetPlacementCurrent(asset)) return;
         console.error("[audio] 加载耳机模型失败:", e);
         // 回退：用小立方体占位，音频仍正常播放
         const nodeId = this.nodeIdCounter++;
@@ -193,6 +192,7 @@ module.exports = function (XR_CONFIG) {
         rootNode.addChild(cubeEl);
         this._registerNode(asset.id, rootNode, null, {
           type: "audio",
+          contentEpoch: asset._contentEpoch,
           audioRefs: { ctx, baseVolume, srcX, srcY, srcZ },
         });
       }

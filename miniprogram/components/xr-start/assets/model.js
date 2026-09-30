@@ -111,6 +111,7 @@ module.exports = {
       // 用户感知为"咔哒一下卡"。等待一帧再继续，把重活摊到下一帧。
       await __yieldFrame();
 
+      if (!this._isAssetPlacementCurrent(asset)) return;
       // 加载完成后取当前相机位置，确保素材落在用户前方而非身后
       const pos = this._calcForwardPos("model");
       if (!pos) return;
@@ -142,8 +143,15 @@ module.exports = {
       gltfComp.setData({ model });
       rootNode.addChild(gltfEl);
 
+      // 在下一次 await 前登记，保证切换模式能立即移除已经加入场景的节点。
+      const entry = this._registerNode(asset.id, rootNode, null, {
+        type: "model",
+        contentEpoch: asset._contentEpoch,
+      });
+      entry.modelUrl = asset.file_url;
       // 再让一帧：setData 触发了 GPU 资源上传，把 calcTotalBoundBox 推迟到下一帧执行
       await __yieldFrame();
+      if (!this._isAssetPlacementCurrent(asset) || !this.nodeList.includes(entry)) return;
 
       // 计算（或复用）包围盒：calcTotalBoundBox 对高面数模型耗时显著，按 URL 缓存
       let cachedSize = __urlToBoundSize.get(asset.file_url);
@@ -180,11 +188,6 @@ module.exports = {
         });
       }
 
-      const entry = this._registerNode(asset.id, rootNode, null, {
-        type: "model",
-      });
-      // 记录 URL 供 GLB 缓存 LRU 判断"仍有在场实例"，禁止释放
-      entry.modelUrl = asset.file_url;
       // 无内置动画时才叠加上下跳动 + 水平旋转效果
       if (!hasAnimation) {
         entry.modelAnim = {

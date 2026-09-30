@@ -128,6 +128,7 @@ module.exports = function (XR_CONFIG) {
     },
 
     showDanmakuInXR(text) {
+      if (this.retrievalMode === "anchor" || this._retrievalPaused || this._disposed) return;
       const xr = wx.getXrFrameSystem();
       const scene = this.scene;
       const camTransform = this.getCamTransform();
@@ -160,14 +161,20 @@ module.exports = function (XR_CONFIG) {
       });
       this.shadowRoot.addChild(rootNode);
 
-      const textEl = this._buildBubbleNodes(rootNode, text);
-
-      // billboard 目标 = rootNode，让整个气泡结构朝向相机
-      // assetId = null 表示本地刚发、未入库的弹幕；type='danmaku' 归入 transient 桶（FIFO）。
-      // （后续从数据库拉下来的历史弹幕是 text 类型素材，归入 light 桶）
-      const entry = this._registerNode(null, rootNode, rootNode, {
-        type: "danmaku",
-      });
+      let entry;
+      let textEl;
+      try {
+        entry = this._registerNode(null, rootNode, rootNode, { type: "danmaku" });
+        if (entry._destroyed) return;
+        textEl = this._buildBubbleNodes(rootNode, text);
+        entry.textRefs = { textEl };
+      } catch (error) {
+        const registered = entry || this.nodeList.find((item) => item.node === rootNode);
+        this.nodeList = this.nodeList.filter((item) => item.node !== rootNode);
+        this._destroyNode(registered || { assetId: null, node: rootNode, type: "danmaku" });
+        console.warn("[danmaku] 构建文字失败，已清理", error);
+        return;
+      }
 
       this.flyingDanmakus.push({
         node: rootNode,

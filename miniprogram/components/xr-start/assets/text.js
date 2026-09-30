@@ -19,12 +19,24 @@ module.exports = {
     });
     this.shadowRoot.addChild(rootNode);
 
-    this._buildBubbleNodes(
-      rootNode,
-      asset.text_content || "无内容",
-      asset.config || null,
-    );
-    // billboard 目标 = rootNode，让整个气泡结构朝向相机
-    this._registerNode(asset.id, rootNode, rootNode, { type: "text" });
+    let entry;
+    try {
+      // 先登记父节点，构建文字/气泡失败时也能完整回收。
+      entry = this._registerNode(asset.id, rootNode, rootNode, {
+        type: "text", contentEpoch: asset._contentEpoch,
+      });
+      if (entry._destroyed) return;
+      const textEl = this._buildBubbleNodes(
+        rootNode,
+        asset.text_content || "无内容",
+        asset.config || null,
+      );
+      entry.textRefs = { textEl };
+    } catch (error) {
+      const registered = entry || this.nodeList.find((item) => item.node === rootNode);
+      this.nodeList = this.nodeList.filter((item) => item.node !== rootNode);
+      this._destroyNode(registered || { assetId: asset.id, node: rootNode, type: "text" });
+      throw error;
+    }
   },
 };

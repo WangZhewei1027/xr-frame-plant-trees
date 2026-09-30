@@ -5,6 +5,7 @@ const textMethods = require("./text");
 const modelMethods = require("./model");
 const imageMethods = require("./image");
 const videoMethods = require("./video");
+const matchLog = require("../matching/log");
 
 /**
  * 远程素材模块入口：fetch + display + 分发到具体类型放置器，
@@ -72,6 +73,13 @@ module.exports = function (XR_CONFIG) {
      */
     displayAssets(assets) {
       if (this._disposed || this._retrievalPaused) return;
+      // 匹配模式只接收已确认 anchor 的白名单；预加载回放也不能复活旧轮素材。
+      assets = assets.filter((a) =>
+        a && (a._contentEpoch == null || a._contentEpoch === this._contentEpoch) &&
+        (this.retrievalMode !== "anchor" ||
+          (this._matchedAnchorId && this._allowedAssetIds.has(a.id))),
+      );
+      if (!assets.length) return;
       assets = assets.map((a) => ({ ...a, _contentEpoch: this._contentEpoch }));
       for (const a of assets) this._allowedAssetIds.add(a.id);
       // 预加载（scene + 头像/气泡纹理）未就绪时，先暂存，等 flushPendingDisplayAssets 调用
@@ -149,10 +157,54 @@ module.exports = function (XR_CONFIG) {
       const baseStagger = XR_CONFIG.placeStaggerMs || 40;
       while (this._placeQueue && this._placeQueue.length > 0) {
         const asset = this._placeQueue.shift();
+        // 关联匹配请求，而非素材加载完成时碰巧处于活动状态的另一轮请求。
+        const timing = this.retrievalMode === "anchor" &&
+          this._recognitionTiming?.contentEpoch === asset._contentEpoch
+          ? this._recognitionTiming : null;
+        const placementStartedAt = Date.now();
+        const existingEntries = timing ? new Set(this.nodeList) : null;
+        const queueWaitMs = timing ? Math.max(0, placementStartedAt - timing.matchedAt) : null;
+        let placementError = null;
+        if (timing) {
+          matchLog("素材开始放置", {
+            anchorId: timing.anchorId, assetId: asset.id, assetType: asset.file_type,
+            queueWaitMs,
+          }, "info", timing.requestId);
+        }
         try {
           await this._placeAsset(asset);
         } catch (error) {
+          placementError = error;
           console.warn("[assets] 放置失败", error);
+        }
+        if (timing) {
+          const completedAt = Date.now();
+          const current = this._recognitionTiming === timing &&
+            this.retrievalMode === "anchor" && !this._disposed && !this._retrievalPaused &&
+            timing.contentEpoch === this._contentEpoch && asset._contentEpoch === this._contentEpoch &&
+            this._matchedAnchorId === timing.anchorId && this._allowedAssetIds.has(asset.id);
+          // _placeAsset 也可能正常返回但没有放置节点，不能把返回时间说成显示成功。
+          const placed = current && this.nodeList.some((entry) =>
+            entry.assetId === asset.id && entry.node && !entry._destroyed && !existingEntries.has(entry),
+          );
+          const outcome = !current ? "cancelled" : placementError ? "error" : placed ? "ready" : "skipped";
+          const fields = {
+            anchorId: timing.anchorId, assetId: asset.id, assetType: asset.file_type, outcome,
+            queueWaitMs, placementMs: Math.max(0, completedAt - placementStartedAt),
+            matchToAssetReadyMs: outcome === "ready" ? Math.max(0, completedAt - timing.matchedAt) : null,
+            captureToAssetReadyMs: outcome === "ready" && Number.isFinite(timing.captureStartedAt)
+              ? Math.max(0, completedAt - timing.captureStartedAt) : null,
+            totalMs: Math.max(0, completedAt - timing.startedAt),
+          };
+          matchLog("素材放置结束", fields, outcome === "error" ? "warn" : "info", timing.requestId);
+          if (outcome === "ready" && !timing.firstAssetReadyLogged) {
+            timing.firstAssetReadyLogged = true;
+            matchLog("首个素材就绪", {
+              ...fields,
+              // 这里只测量放置方法完成且节点已登记，未测量 GPU 呈现的屏幕首帧。
+              readiness: "placement_complete", screenFirstFrameMeasured: false,
+            }, "info", timing.requestId);
+          }
         }
         // 模型放置触发 GPU 资源上传，给主线程多一点喘息时间；
         // 其他轻量类型（text/image/audio/video）用配置中的基础值即可。
@@ -196,14 +248,16 @@ module.exports = function (XR_CONFIG) {
       };
     },
 
+    _isAssetPlacementCurrent(asset) {
+      return !this._disposed && !this._retrievalPaused &&
+        asset._contentEpoch === this._contentEpoch &&
+        this._allowedAssetIds.has(asset.id) &&
+        (this.retrievalMode !== "anchor" || !!this._matchedAnchorId);
+    },
+
     /** 按 file_type 分发到对应的放置方法 */
     async _placeAsset(asset) {
-      if (
-        this._disposed ||
-        asset._contentEpoch !== this._contentEpoch ||
-        !this._allowedAssetIds.has(asset.id)
-      )
-        return;
+      if (!this._isAssetPlacementCurrent(asset)) return;
       this._activePlacementEpoch = asset._contentEpoch;
       if (asset.file_type === "model") await this._placeModelAsset(asset);
       else if (asset.file_type === "text") this._placeTextAsset(asset);

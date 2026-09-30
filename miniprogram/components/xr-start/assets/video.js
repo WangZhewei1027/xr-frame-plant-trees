@@ -44,6 +44,10 @@ module.exports = {
         options: { autoPlay, loop },
       });
 
+      if (!this._isAssetPlacementCurrent(asset)) {
+        try { scene.assets.releaseAsset("video-texture", videoAssetId); } catch (_) {}
+        return;
+      }
       // 2. 获取 TBB Effect，基于它为本视频创建独立 Material 并绑定纹理
       const tbbEffect = scene.assets.getAsset(
         "effect",
@@ -108,6 +112,7 @@ module.exports = {
       // billboardEl = rootNode，使整个平面在 handleTick 中始终朝向相机
       this._registerNode(asset.id, rootNode, rootNode, {
         type: "video",
+        contentEpoch: asset._contentEpoch,
         videoRefs: { scene, videoAssetId, matAssetId },
       });
 

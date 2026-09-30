@@ -54,6 +54,10 @@ module.exports = {
         );
       }
 
+      if (!this._isAssetPlacementCurrent(asset)) {
+        try { scene.assets.releaseAsset("texture", assetId); } catch (_) {}
+        return;
+      }
       XR_CONFIG.debugLog &&
         console.log(
           "[image] getImageInfo res:",
@@ -118,6 +122,7 @@ module.exports = {
       // imageRefs：驱逐时由 registry 的 image.dispose 释放该唯一纹理，防 GPU 内存泄漏
       this._registerNode(asset.id, rootNode, rootNode, {
         type: "image",
+        contentEpoch: asset._contentEpoch,
         imageRefs: { scene, texAssetId: assetId },
       });
     } catch (e) {

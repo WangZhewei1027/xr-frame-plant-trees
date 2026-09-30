@@ -11,7 +11,7 @@
     <xr-shadow id="shadow-root" />
 
     <xr-node>
-        <xr-ar-tracker mode="Plane">
+        <xr-ar-tracker wx:if="{{retrievalMode === 'gps'}}" mode="Plane">
             <xr-gltf model="anchor"></xr-gltf>
         </xr-ar-tracker>
 
