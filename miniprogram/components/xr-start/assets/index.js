@@ -1,4 +1,4 @@
-const { CONFIG, supabaseRpc } = require("../../../utils/supabase");
+const { CONFIG, backendRpc } = require("../../../utils/backend");
 const createQueueMethods = require("./queue");
 const createAudioMethods = require("./audio");
 const textMethods = require("./text");
@@ -31,7 +31,7 @@ module.exports = function (XR_CONFIG) {
       this.isFetchingAssets = true;
 
       try {
-        const { statusCode, data } = await supabaseRpc("get_nearby_assets", {
+        const { statusCode, data } = await backendRpc("get_nearby_assets", {
           user_lat: this.currentGPS.latitude,
           user_lng: this.currentGPS.longitude,
           max_distance_meters: XR_CONFIG.maxDistanceMeters,

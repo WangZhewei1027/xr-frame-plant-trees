@@ -3,7 +3,7 @@ const preload = require("./preload");
 const gps = require("./gps");
 const navigation = require("./navigation");
 const matching = require("./matching/index");
-const { CONFIG, supabaseGet } = require("../../utils/supabase");
+const { CONFIG, fetchOrganizations } = require("../../utils/backend");
 
 const createAssetsMethods = require("./assets/index");
 const createHugeMethods = require("./assets/huge");
@@ -313,13 +313,8 @@ Component({
       const styleKey = `config:org:${orgId}:textStyle:v1`;
       const confettiKey = `config:org:${orgId}:confetti:v1`;
       try {
-        // 注意：text_asset_miniapp_style 顶层列已废弃并迁入 config jsonb。
-        // 若仍在 select 中引用该列，PostgREST 会以 400 拒绝整个请求，
-        // 导致 statusCode!==200、配置不落地、彩带无法启动。故只选 config。
-        const { statusCode, data } = await supabaseGet(
-          "organization",
-          `id=eq.${orgId}&select=config`,
-        );
+        // 接口只返回小程序会用到的 config 键（见 docs/miniapp-api.md）。
+        const { statusCode, data } = await fetchOrganizations([orgId]);
         if (statusCode === 200 && Array.isArray(data) && data.length > 0) {
           const row = data[0];
           const cfg =

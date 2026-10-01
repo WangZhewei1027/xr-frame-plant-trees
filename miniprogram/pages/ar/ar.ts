@@ -1,4 +1,4 @@
-import { CONFIG, supabaseRpc } from "../../utils/supabase";
+import { CONFIG, backendRpc } from "../../utils/backend";
 
 interface LocationData {
   latitude: number;
@@ -241,7 +241,7 @@ Page({
 
     this.setData({ isSubmitting: true });
     try {
-      const { statusCode } = await supabaseRpc("upload_text_asset", {
+      const { statusCode } = await backendRpc("upload_text_asset", {
         user_lat: location.latitude,
         user_lng: location.longitude,
         p_workspace_id: CONFIG.workspaceId,

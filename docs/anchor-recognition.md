@@ -1,6 +1,6 @@
 # AR 素材来源切换
 
-当前识别链路为：小程序上传 JPEG 和 GPS → Supabase Edge Function `recognize-anchor` → GPS 候选与参考特征查询 → 阿里云 SAGE 推理 → 返回匹配点及其关联素材。小程序直接调用识别函数，管理端继续负责匹配点、参考图及关联素材管理。
+当前识别链路为：小程序上传 JPEG 和 GPS → Web 平台 `POST https://spatialmemory.online/api/miniapp/anchors/recognize?workspace_id=…`（阿里云上海，与数据库、SAGE 模型同地域）→ GPS 候选与参考特征查询 → 阿里云 SAGE 推理 → 返回匹配点及其关联素材。管理端继续负责匹配点、参考图及关联素材管理。请求/响应协议与原 Supabase Edge Function 一致（`X-Recognition-Request-Id` 回显、`data.request_id`、`diagnostics`），不再需要 `x-region` 头。所有数据接口见 `miniprogram/utils/backend.ts` 与 Web 仓库的 `docs/miniapp-api.md`。
 
 ## 匹配调试日志
 

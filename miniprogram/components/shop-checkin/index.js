@@ -1,4 +1,4 @@
-import { CONFIG, supabaseRpc } from "../../utils/supabase";
+import { CONFIG, backendRpc } from "../../utils/backend";
 
 /** Haversine 公式计算两点间距离（米） */
 function getDistanceMeters(lat1, lng1, lat2, lng2) {
@@ -115,7 +115,7 @@ Component({
     async loadShops() {
       this.setData({ shopsLoading: true });
       try {
-        const { statusCode, data } = await supabaseRpc("get_shop_assets", {
+        const { statusCode, data } = await backendRpc("get_shop_assets", {
           p_workspace_id: CONFIG.workspaceId,
           p_organization_id: CONFIG.organizationId,
         });

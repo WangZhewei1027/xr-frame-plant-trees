@@ -1,5 +1,5 @@
 const config = require("./config");
-const { CONFIG } = require("../../../utils/supabase");
+const { CONFIG, RECOGNIZE_API } = require("../../../utils/backend");
 const { captureCamera, isCaptureBusy, removeTempFile, createCaptureTiming, disposeCapture } = require("./capture");
 const matchLog = require("./log");
 
@@ -252,8 +252,8 @@ module.exports = {
       Date.now() < this._nextRecognitionAt
     )
       return;
-    const base = config.apiBaseUrl.replace(/\/+$/, "");
-    const apiPath = config.apiPath || "/api/miniapp/anchors/recognize";
+    const base = (config.apiBaseUrl || RECOGNIZE_API.baseUrl).replace(/\/+$/, "");
+    const apiPath = config.apiPath || RECOGNIZE_API.path;
     if (!/^https:\/\/[^/]+$/.test(base) || !/^\/[a-zA-Z0-9/_-]+$/.test(apiPath) || !CONFIG.workspaceId) {
       matchLog("配置不完整，无法发起识别", {
         validApiOrigin: /^https:\/\/[^/]+$/.test(base),
@@ -392,7 +392,7 @@ module.exports = {
             }, res.statusCode === 200 ? "info" : "warn");
             if (res.statusCode !== 200) {
               const messages = {
-                401: "识别接口需要开放访问，请检查 Edge Function 的 JWT 配置",
+                401: "识别接口需要开放访问，请检查服务端配置",
                 403: "识别接口被拒绝访问，请检查服务网关",
                 429: "识别请求过多，稍后重试",
                 503: "匹配服务尚未就绪",

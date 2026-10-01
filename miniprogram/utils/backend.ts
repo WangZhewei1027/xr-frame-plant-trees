@@ -1,6 +1,9 @@
-const SUPABASE_URL = "https://mkdfezaufjhrfjkfqlbj.supabase.co";
-const SUPABASE_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rZGZlemF1ZmpocmZqa2ZxbGJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUyMDI2NzksImV4cCI6MjA4MDc3ODY3OX0.YvoVQP5k61rl1dbm-y7O-MQCsfke3rnSIzhWvbVGQdU";
+// 后端访问层：小程序只和 Web 平台的公开接口 /api/miniapp/* 通信
+// （服务端文档：sanlinlaojie/docs/miniapp-api.md），不再直连数据库。
+// 接口的参数名与返回结构和原先的 Supabase RPC / 表查询完全一致，
+// 调用方只需换函数名，渲染逻辑不变。
+const API_BASE_URL = "https://spatialmemory.online";
+const API_PREFIX = "/api/miniapp";
 
 /** 兜底默认值 */
 const DEFAULT_CONFIG = {
@@ -160,48 +163,72 @@ export function setConfig(params: {
   }
 }
 
-/** Supabase REST GET 查询，支持 query string 过滤 */
-export function supabaseGet<T = any>(
-  table: string,
-  query?: string,
-): Promise<{ statusCode: number; data: T }> {
-  const qs = query ? `?${query}` : "";
-  return new Promise((resolve, reject) => {
-    wx.request({
-      url: `${SUPABASE_URL}/rest/v1/${table}${qs}`,
-      method: "GET",
-      header: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-      },
-      success: (res) => resolve(res as { statusCode: number; data: T }),
-      fail: reject,
-    });
-  });
-}
+/** 识别接口地址（matching/index.js 用 wx.uploadFile 直接上传） */
+export const RECOGNIZE_API = {
+  baseUrl: API_BASE_URL,
+  path: `${API_PREFIX}/anchors/recognize`,
+};
 
-/** wx.request 的 Promise 封装，自动注入 Supabase 认证头 */
-export function supabaseRpc<T = any>(
-  fnName: string,
-  data: Record<string, any>,
-): Promise<{ statusCode: number; data: T }> {
+type ApiResponse<T> = { statusCode: number; data: T };
+
+/** wx.request 的 Promise 封装（公开接口，无需鉴权头） */
+function request<T>(
+  path: string,
+  method: "GET" | "POST",
+  data?: Record<string, any>,
+): Promise<ApiResponse<T>> {
   return new Promise((resolve, reject) => {
     wx.request({
-      url: `${SUPABASE_URL}/rest/v1/rpc/${fnName}`,
-      method: "POST",
-      header: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-      },
+      url: `${API_BASE_URL}${API_PREFIX}${path}`,
+      method,
+      header: { "Content-Type": "application/json" },
       data,
-      success: (res) => resolve(res as { statusCode: number; data: T }),
+      success: (res) => resolve(res as ApiResponse<T>),
       fail: reject,
     });
   });
 }
 
-/** 小程序公开 API key；仅用于允许公开访问的空间，不包含服务端密钥。 */
-export function getPublicApiHeaders(): { apikey: string } {
-  return { apikey: SUPABASE_KEY };
+export interface OrganizationSummary {
+  id: string;
+  name: string;
+  /** 只包含小程序会用到的键：confetti_enabled / shop_checkin_enabled / footer_enabled / text_asset_miniapp_style */
+  config: Record<string, unknown>;
+}
+
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+}
+
+/** 按 id 批量取组织名称与小程序相关配置（最多 50 个） */
+export function fetchOrganizations(
+  ids: string[],
+): Promise<ApiResponse<OrganizationSummary[]>> {
+  return request(`/organizations?ids=${encodeURIComponent(ids.join(","))}`, "GET");
+}
+
+/** 按 id 批量取工作空间名称（最多 50 个） */
+export function fetchWorkspaces(
+  ids: string[],
+): Promise<ApiResponse<WorkspaceSummary[]>> {
+  return request(`/workspaces?ids=${encodeURIComponent(ids.join(","))}`, "GET");
+}
+
+/** 原 Supabase RPC 名 → 新接口路径；请求体与返回值和原 RPC 完全一致 */
+const RPC_PATHS = {
+  get_nearby_assets: "/assets/nearby",
+  get_huge_assets: "/assets/huge",
+  get_shop_assets: "/shops",
+  upload_text_asset: "/text-assets",
+} as const;
+
+export type RpcName = keyof typeof RPC_PATHS;
+
+/** 调用原先通过 RPC 暴露的数据库函数（参数名不变） */
+export function backendRpc<T = any>(
+  fnName: RpcName,
+  data: Record<string, any>,
+): Promise<ApiResponse<T>> {
+  return request<T>(RPC_PATHS[fnName], "POST", data);
 }

@@ -1,12 +1,13 @@
 import {
   setConfig,
   CONFIG,
-  supabaseGet,
+  fetchOrganizations,
+  fetchWorkspaces,
   loadScanHistory,
   recordScanHistory,
   saveScanHistory,
   ScanHistoryEntry,
-} from "../../utils/supabase";
+} from "../../utils/backend";
 
 /** 历史记录在下拉菜单中的展示形态 */
 interface HistoryItem extends ScanHistoryEntry {
@@ -85,16 +86,10 @@ Page({
     try {
       // 并行拉取 organization / workspace 名称，避免串行 await 阻塞首屏渲染
       const orgPromise = CONFIG.organizationId
-        ? supabaseGet<{ name: string; config?: Record<string, unknown> }[]>(
-            "organization",
-            `id=eq.${CONFIG.organizationId}&select=name,config&limit=1`,
-          ).catch(() => null)
+        ? fetchOrganizations([CONFIG.organizationId]).catch(() => null)
         : Promise.resolve(null);
       const wsPromise = CONFIG.workspaceId
-        ? supabaseGet<{ name: string }[]>(
-            "workspace",
-            `id=eq.${CONFIG.workspaceId}&select=name&limit=1`,
-          ).catch(() => null)
+        ? fetchWorkspaces([CONFIG.workspaceId]).catch(() => null)
         : Promise.resolve(null);
 
       const [orgRes, wsRes] = await Promise.all([orgPromise, wsPromise]);
@@ -178,16 +173,10 @@ Page({
     try {
       const [orgRes, wsRes] = await Promise.all([
         orgIds.length
-          ? supabaseGet<{ id: string; name: string }[]>(
-              "organization",
-              `id=in.(${orgIds.join(",")})&select=id,name`,
-            ).catch(() => null)
+          ? fetchOrganizations(orgIds).catch(() => null)
           : Promise.resolve(null),
         wsIds.length
-          ? supabaseGet<{ id: string; name: string }[]>(
-              "workspace",
-              `id=in.(${wsIds.join(",")})&select=id,name`,
-            ).catch(() => null)
+          ? fetchWorkspaces(wsIds).catch(() => null)
           : Promise.resolve(null),
       ]);
 

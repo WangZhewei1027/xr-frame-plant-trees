@@ -1,4 +1,4 @@
-const { CONFIG, supabaseRpc } = require("../../../utils/supabase");
+const { CONFIG, backendRpc } = require("../../../utils/backend");
 
 /**
  * 巨型远景模型：从 asset 表查询 is_huge=true 的 model，
@@ -94,7 +94,7 @@ module.exports = function (XR_CONFIG) {
       this._isFetchingHuge = true;
 
       try {
-        const { statusCode, data } = await supabaseRpc("get_huge_assets", {
+        const { statusCode, data } = await backendRpc("get_huge_assets", {
           p_organization_id: CONFIG.organizationId,
           // workspaceId 未设置时传 null，RPC 解释为"不限 workspace"
           p_workspace_id: CONFIG.workspaceId ?? null,
