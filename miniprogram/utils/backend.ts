@@ -2,7 +2,14 @@
 // （服务端文档：sanlinlaojie/docs/miniapp-api.md），不再直连数据库。
 // 接口的参数名与返回结构和原先的 Supabase RPC / 表查询完全一致，
 // 调用方只需换函数名，渲染逻辑不变。
-const API_BASE_URL = "https://spatialmemory.online";
+//
+// 临时地址（2026-10-08）：域名 spatialmemory.online 还在等 ICP 备案，阿里云会拦截
+// 未备案域名，所以暂时直连服务器 IP（Let's Encrypt 签发的 IP 证书，HTTPS 有效）。
+// 注意：微信不允许把 IP 配成「服务器域名」，所以只能在以下场景使用：
+//   - 开发者工具勾选「不校验合法域名」（project.private.config.json: urlCheck=false）
+//   - 真机预览 / 开发版 / 体验版，并在小程序右上角菜单里「打开调试」
+// 备案通过后改回 "https://spatialmemory.online" 再发正式版。
+const API_BASE_URL = "https://139.196.189.102";
 const API_PREFIX = "/api/miniapp";
 
 /** 兜底默认值 */

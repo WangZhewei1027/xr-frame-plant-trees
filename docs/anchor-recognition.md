@@ -2,6 +2,8 @@
 
 当前识别链路为：小程序上传 JPEG 和 GPS → Web 平台 `POST https://spatialmemory.online/api/miniapp/anchors/recognize?workspace_id=…`（阿里云上海，与数据库、SAGE 模型同地域）→ GPS 候选与参考特征查询 → 阿里云 SAGE 推理 → 返回匹配点及其关联素材。管理端继续负责匹配点、参考图及关联素材管理。请求/响应协议与原 Supabase Edge Function 一致（`X-Recognition-Request-Id` 回显、`data.request_id`、`diagnostics`），不再需要 `x-region` 头。所有数据接口见 `miniprogram/utils/backend.ts` 与 Web 仓库的 `docs/miniapp-api.md`。
 
+> 2026-10-08 起临时改为直连 `https://139.196.189.102`（域名等待 ICP 备案）。微信不允许 IP 作为服务器域名，只能在开发者工具「不校验合法域名」或真机「打开调试」时使用；备案通过后改回域名（只需改 `utils/backend.ts` 的 `API_BASE_URL`）。
+
 ## 匹配调试日志
 
 开发者工具 Console 或真机调试控制台筛选 `AnchorMatch`，并开启 Log / Warning / Error 级别。`matching/config.js` 的 `debugLogs: true` 默认开启；改为 `false` 可关闭。日志仅输出到本地控制台，不上传到日志服务。

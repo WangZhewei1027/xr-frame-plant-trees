@@ -3,7 +3,7 @@
     "projectname": "xr-frame-plant-trees",
     "setting": {
         "compileHotReLoad": true,
-        "urlCheck": true,
+        "urlCheck": false,
         "coverView": false,
         "lazyloadPlaceholderEnable": false,
         "skylineRenderEnable": true,
