@@ -7,6 +7,19 @@ const SERVER_STAGES = ["request_parse_ms", "validation_ms", "rate_limit_ms",
   "gps_query_ms", "reference_read_ms", "database_context_ms", "database_finalize_ms",
   "model_request_ms", "model_queue_ms", "model_decode_ms", "model_inference_ms", "model_service_total_ms",
   "ranking_ms", "candidate_recheck_ms", "assets_read_ms", "matching_total_ms", "api_total_ms"];
+// 设备标识：随机生成并存在本地，只用于服务端按设备限流（同一 Wi-Fi/运营商出口
+// 的多个游客共用公网 IP，按 IP 限流会互相挤占）。不含任何用户信息。
+const CLIENT_ID_KEY = "anchorMatchClientId";
+let clientId = null;
+function getClientId() {
+  if (clientId) return clientId;
+  try { clientId = wx.getStorageSync(CLIENT_ID_KEY) || null; } catch (_) { clientId = null; }
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(clientId || "")) {
+    clientId = Date.now().toString(36) + Array.from({ length: 4 }, () => Math.random().toString(36).slice(2, 8)).join("");
+    try { wx.setStorageSync(CLIENT_ID_KEY, clientId); } catch (_) { /* 存储失败时本次会话内仍复用 */ }
+  }
+  return clientId;
+}
 function safeLabel(value, limit = 100) {
   return typeof value === "string" && value.length <= limit && /^[a-zA-Z0-9._:-]+$/.test(value) ? value : null;
 }
@@ -383,6 +396,7 @@ module.exports = {
           url: `${base}${apiPath}?workspace_id=${encodeURIComponent(CONFIG.workspaceId)}`,
           header: {
             "X-Recognition-Request-Id": requestId,
+            "X-Client-Id": getClientId(),
             ...(config.functionRegion ? { "x-region": config.functionRegion } : {}),
           },
           filePath,
