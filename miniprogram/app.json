@@ -3,6 +3,12 @@
     "pages/index/index",
     "pages/ar/ar"
   ],
+  "subpackages": [
+    {
+      "root": "labs/xr-three",
+      "pages": ["index", "bridge"]
+    }
+  ],
   "window": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "Weixin",

@@ -1,0 +1,40 @@
+<view class="page">
+  <text class="title">xr-frame × Three.js {{revision}}</text>
+  <text class="description">独立实验，不调用识别服务。分别验证动画桥接、WebGL 2 渲染和像素复制。</text>
+  <view class="section">
+    <text class="label">A · xr-frame 相机与原生渲染</text>
+    <lab-xr wx:if="{{xrMounted}}" id="lab-xr" width="{{xrWidth}}" height="{{xrHeight}}" style="width:{{viewWidth}}px;height:240px;" bind:diagnostic="onXRDiagnostic" />
+    <button wx:else bindtap="mountXR">启动 xr-frame / AR 相机</button>
+    <text class="hint">{{xrStatus}}</text>
+    <text class="hint">绿色立方体：新版 Three.js AnimationMixer 驱动 XR Transform。</text>
+    <view class="actions">
+      <button size="mini" bindtap="placeInFront" disabled="{{!xrReady}}">放到当前镜头前方</button>
+      <button wx:if="{{xrMounted}}" size="mini" bindtap="unmountXR">关闭 XR</button>
+    </view>
+  </view>
+  <view class="section">
+    <text class="label">B · Three.js WebGLRenderer</text>
+    <canvas id="three-canvas" type="webgl2" class="gpu-canvas" bindwebglcontextlost="onContextLost" bindwebglcontextrestored="onContextRestored" />
+    <text class="hint">独立 256 × 256 画布；与 A 不共享相机、深度或 WebGL 上下文。</text>
+    <view class="actions">
+      <button size="mini" bindtap="testGLB" disabled="{{!gpuReady}}">测试 GLB 动画</button>
+      <button size="mini" bindtap="testImage" disabled="{{!gpuReady}}">测试本地图片纹理</button>
+    </view>
+  </view>
+  <view class="section">
+    <text class="label">共用播放时钟</text>
+    <slider min="0" max="4000" value="{{playhead}}" bindchanging="onSeek" bindchange="onSeek" show-value />
+    <view class="actions">
+      <button size="mini" bindtap="togglePlay">{{playing ? '暂停' : '播放'}}</button>
+      <button size="mini" bindtap="toggleBridge" disabled="{{!gpuReady || !xrReady}}">{{bridgeEnabled ? '关闭' : '开启'}}贴图桥接</button>
+      <button size="mini" bindtap="toggleFlip" disabled="{{!bridgeEnabled}}">翻转 Y：{{flipY ? '开' : '关'}}</button>
+    </view>
+    <text class="hint">贴图桥接以最多 10 FPS 读取 Three 像素，再上传至 XR 平面。只证明画面传递，不等于原生三维互通。</text>
+  </view>
+  <view class="section">
+    <text class="label">诊断</text>
+    <text class="report" user-select>{{summary}}</text>
+    <button size="mini" bindtap="copyReport">复制完整报告</button>
+    <text class="report" user-select>{{logText}}</text>
+  </view>
+</view>

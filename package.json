@@ -3,13 +3,16 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
+    "build:xr-three-lab": "node scripts/build-xr-three-lab.cjs",
+    "test:xr-three-lab": "node scripts/test-xr-three-lab.cjs"
   },
   "keywords": [],
   "author": "",
   "license": "",
-  "dependencies": {
-  },
   "devDependencies": {
-    "miniprogram-api-typings": "^2.8.3-1"
+    "abort-controller": "3.0.0",
+    "esbuild": "0.28.2",
+    "miniprogram-api-typings": "^2.8.3-1",
+    "three": "0.186.1"
   }
 }

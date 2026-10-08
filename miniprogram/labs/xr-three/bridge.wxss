@@ -1,0 +1,10 @@
+page { background: #f3f5f7; color: #17212b; }
+.page { padding: 16px; padding-bottom: 40px; }
+.title { display: block; font-size: 21px; font-weight: 600; margin-bottom: 8px; }
+.description, .hint { display: block; font-size: 12px; line-height: 1.6; color: #526273; margin: 8px 0; }
+.section { margin-top: 16px; padding: 12px; background: #fff; border-radius: 10px; }
+.label { display: block; font-weight: 600; font-size: 15px; margin-bottom: 12px; }
+.gpu-canvas { width: 256px; height: 256px; margin: 0 auto; background: #14202b; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions button { margin: 0; }
+.report { display: block; white-space: pre-wrap; word-break: break-all; font-size: 11px; line-height: 1.6; margin: 10px 0; }

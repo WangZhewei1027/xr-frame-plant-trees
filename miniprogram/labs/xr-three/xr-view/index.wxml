@@ -1,0 +1,14 @@
+<xr-scene ar-system="modes:Plane;" bind:ready="onReady" bind:ar-ready="onARReady" bind:tick="onTick">
+  <xr-assets>
+    <xr-asset-material asset-id="lab-solid" effect="standard" uniforms="u_baseColorFactor: 0.18 0.8 0.5 1" />
+  </xr-assets>
+  <xr-node id="lab-origin" position="0 0 -2">
+    <xr-node id="lab-performer">
+      <xr-mesh geometry="cube" material="lab-solid" scale="0.22 0.22 0.22" />
+    </xr-node>
+  </xr-node>
+  <xr-shadow id="lab-texture-root" />
+  <xr-light type="ambient" intensity="1.5" />
+  <xr-light type="directional" rotation="40 30 0" intensity="2" />
+  <xr-camera id="lab-camera" background="ar" is-ar-camera />
+</xr-scene>

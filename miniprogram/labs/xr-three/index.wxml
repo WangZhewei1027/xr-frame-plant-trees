@@ -1,0 +1,39 @@
+<view class="page">
+  <text class="title">VisionKit × Three.js {{revision}}</text>
+  <text class="description">扫描平面、放置素材、播放演出。相机背景与三维内容共用一个画布。</text>
+  <view class="viewport" style="width:{{viewWidth}}px;height:{{viewHeight}}px;">
+    <canvas id="three-canvas" type="webgl2" style="width:{{viewWidth}}px;height:{{viewHeight}}px;" bindwebglcontextlost="onContextLost" bindwebglcontextrestored="onContextRestored" />
+    <view class="badge">{{arRunning ? 'AR 相机' : '测试画面 · 非相机'}}</view>
+    <view wx:if="{{arRunning}}" class="crosshair">＋</view>
+  </view>
+  <text class="status">{{status}}</text>
+  <view class="actions">
+    <button wx:if="{{!arRunning}}" type="primary" size="mini" bindtap="startAR" loading="{{starting}}" disabled="{{!gpuReady || starting}}">启动 AR</button>
+    <button wx:if="{{arRunning || starting}}" size="mini" bindtap="stopAR">停止 AR</button>
+    <button size="mini" bindtap="placeOnPlane" disabled="{{!arRunning || !canPlace}}">{{placed ? '重新放到准星处' : '放到准星处'}}</button>
+    <button size="mini" bindtap="placeInFront" disabled="{{!arRunning}}">放到前方 2 米</button>
+  </view>
+  <text class="hint">已发现 {{planeCount}} 个平面。落点在本次会话中固定；退出或切到后台后需要重新放置。</text>
+  <view class="section">
+    <text class="label">演出预览</text>
+    <view class="actions">
+      <button size="mini" bindtap="testGLB" disabled="{{!gpuReady}}">加载 GLB 动画</button>
+      <button size="mini" bindtap="testImage" disabled="{{!gpuReady}}">加载图片纹理</button>
+      <button size="mini" bindtap="togglePlay">{{playing ? '暂停动画' : '播放动画'}}</button>
+    </view>
+    <slider min="0" max="4000" value="{{playhead}}" bindchanging="onSeek" bindchange="onSeek" />
+  </view>
+  <view class="section">
+    <view class="actions">
+      <button size="mini" bindtap="toggleDiagnostics">{{showDiagnostics ? '收起调试' : '展开调试'}}</button>
+      <button size="mini" bindtap="copyReport">复制报告</button>
+      <button size="mini" bindtap="openBridge">旧版 XR 桥接实验</button>
+    </view>
+    <view wx:if="{{showDiagnostics}}">
+      <text class="hint">默认采用官方示例的 UV 通道。只有相机明显偏色时，再切换比较；请把机型和报告一起记录。</text>
+      <button size="mini" bindtap="toggleUV">相机 UV：{{uvPacking}}</button>
+      <text class="report" user-select>{{summary}}</text>
+      <text class="report" user-select>{{logText}}</text>
+    </view>
+  </view>
+</view>
