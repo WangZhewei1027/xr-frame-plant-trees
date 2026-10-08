@@ -3,7 +3,8 @@ module.exports = {
   updateGPS({ latitude, longitude, accuracy }) {
     if (this._disposed) return;
     const isFirst = !this.gpsReady;
-    this.currentGPS = { latitude, longitude, accuracy };
+    // sampledAt：收到这次定位的时间，供识别模式判断持续定位是否还新鲜
+    this.currentGPS = { latitude, longitude, accuracy, sampledAt: Date.now() };
     this.gpsReady = true;
     if (isFirst && !this.firstFetchDone) {
       this.firstFetchDone = true;

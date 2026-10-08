@@ -35,7 +35,7 @@
 
 | 日志字段 | 含义 |
 | --- | --- |
-| `gpsSource` | fresh 新定位、cache 使用缓存、shared 等待同一个定位请求 |
+| `gpsSource` | watch 组件的持续定位（首选，随移动更新）、fresh 新的单次高精度定位（持续定位超过 `gpsWatchMaxAgeMs` 未更新或精度 > 100 m 时的兜底）、cache 单次定位缓存、shared 等待同一个单次定位 |
 | `clientTimingsMs.gpsMs` | 本轮等待定位所花的时间 |
 | `clientTimingsMs.captureMs` | 开始取图到 JPEG 导出结束，包括让出主线程的等待 |
 | `captureStagesMs` | 原始帧读取、帧快照、画布准备、像素转换、画布写入与 JPEG 导出的分阶段耗时 |

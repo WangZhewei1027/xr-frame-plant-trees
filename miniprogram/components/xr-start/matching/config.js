@@ -8,7 +8,11 @@ module.exports = {
   functionRegion: "", // 已不再经过 Supabase Edge，无需 x-region 头。
   intervalMs: 1000, // 取图间隔 1 秒；日志同时记录实际间隔，上传/识别允许并发。
   maxInFlightRequests: 6, // 慢网络时跳过调度，不积压旧图片或无限并发。
-  gpsCacheMs: 5000, // 同一识别周期内短暂复用定位，避免每秒重复定位。
+  gpsCacheMs: 5000, // 单次定位（兜底路径）在同一识别周期内的复用时间。
+  // 优先使用组件的持续定位（startLocationUpdate，与 GPS 模式共用，人移动时持续更新）；
+  // 超过这个时间没有新的定位推送、或精度超过 100 米，才退回单次高精度定位（最多等 3 秒）。
+  // 服务端要求 gps_timestamp 在 30 秒内，这里必须小于 30000。
+  gpsWatchMaxAgeMs: 10000,
   errorRetryMs: 5000,
   initialCaptureDelayMs: 3000,
   restartDistanceMeters: 1.5,

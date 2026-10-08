@@ -175,13 +175,29 @@ module.exports = {
     this._recognitionStatus("已移动，3 秒后重新识别…");
   },
 
+  /** 组件持续定位（gps.js startGPSWatch）的最新结果，足够新且精度可用时返回，否则 null */
+  _watchedGPS() {
+    const gps = this.currentGPS;
+    if (!gps || !Number.isFinite(gps.sampledAt)) return null;
+    if (Date.now() - gps.sampledAt > (config.gpsWatchMaxAgeMs ?? 10000)) return null;
+    if (!Number.isFinite(gps.accuracy) || gps.accuracy < 0 || gps.accuracy > 100) return null;
+    return { ...gps, source: "watch" };
+  },
+
   _locateForRecognition(epoch) {
+    // 首选持续定位：随人移动不断更新，大范围移动后也是最新位置，且无需等待。
+    const watched = this._watchedGPS();
+    if (watched) return Promise.resolve(watched);
+    // 兜底：持续定位不可用或太旧时，才做单次高精度定位。
     if (this._recognitionGPS && Date.now() - this._recognitionGPS.sampledAt < (config.gpsCacheMs ?? 5000)) {
-      return Promise.resolve(this._recognitionGPS);
+      return Promise.resolve({ ...this._recognitionGPS, source: "cache" });
     }
-    if (this._recognitionGPSRequest?.epoch === epoch) return this._recognitionGPSRequest.promise;
+    if (this._recognitionGPSRequest?.epoch === epoch) {
+      return this._recognitionGPSRequest.promise.then((gps) => ({ ...gps, source: "shared" }));
+    }
     const request = { epoch };
     request.promise = locate().then((gps) => {
+      gps = { ...gps, source: "fresh" };
       if (this._modeEpoch === epoch && !this._disposed && !this._retrievalPaused) this._recognitionGPS = gps;
       return gps;
     }).finally(() => {
@@ -304,9 +320,8 @@ module.exports = {
       gpsMs: null, captureMs: null, uploadRoundtripMs: null, responseParseMs: null,
       resultHandlingMs: null, sceneClearMs: null, displayDispatchMs: null,
     };
-    const gpsSource = this._recognitionGPS &&
-      startedAt - this._recognitionGPS.sampledAt < (config.gpsCacheMs ?? 5000)
-      ? "cache" : this._recognitionGPSRequest?.epoch === epoch ? "shared" : "fresh";
+    // watch 持续定位 / cache 单次定位缓存 / shared 等待同一个单次定位 / fresh 新的单次定位
+    let gpsSource = null;
     const clearScene = () => {
       const at = Date.now();
       try { this._clearRemoteAssets(); }
@@ -323,6 +338,7 @@ module.exports = {
       let gps;
       try { gps = await this._locateForRecognition(epoch); }
       finally { timingsMs.gpsMs = Date.now() - gpsStartedAt; }
+      gpsSource = gps.source;
       if (!current()) return;
       log("定位完成", {
         accuracyMeters: gps.accuracy, gpsAgeMs: Date.now() - gps.sampledAt,
@@ -334,7 +350,8 @@ module.exports = {
         gps.accuracy > 100
       )
         throw new Error("定位精度不足，请移至开阔处");
-      this.updateGPS(gps);
+      // 单次定位的结果也回填到持续定位状态，供 GPS 模式和下一轮识别使用
+      if (gps.source !== "watch") this.updateGPS(gps);
       // GPS 共用请求恢复时，不让多个等待者同时抓取同一瞬间的画面。
       const captureSlotAt = Date.now();
       if (isCaptureBusy(this.scene) ||
