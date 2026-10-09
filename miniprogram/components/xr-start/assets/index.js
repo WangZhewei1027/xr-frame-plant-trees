@@ -74,15 +74,17 @@ module.exports = function (XR_CONFIG) {
     displayAssets(assets) {
       if (this._disposed || this._retrievalPaused) return;
       // 匹配模式只接收已确认 anchor 的白名单；预加载回放也不能复活旧轮素材。
-      assets = assets.filter((a) =>
-        a && (a._contentEpoch == null || a._contentEpoch === this._contentEpoch) &&
-        (this.retrievalMode !== "anchor" ||
-          (this._matchedAnchorId && this._allowedAssetIds.has(a.id))),
+      assets = assets.filter(
+        (a) =>
+          a &&
+          (a._contentEpoch == null || a._contentEpoch === this._contentEpoch) &&
+          (this.retrievalMode !== "anchor" ||
+            (this._matchedAnchorId && this._allowedAssetIds.has(a.id))),
       );
       if (!assets.length) return;
       assets = assets.map((a) => ({ ...a, _contentEpoch: this._contentEpoch }));
       for (const a of assets) this._allowedAssetIds.add(a.id);
-      // 预加载（scene + 头像/气泡纹理）未就绪时，先暂存，等 flushPendingDisplayAssets 调用
+      // 预加载（VisionKit + Three）未就绪时，先暂存，等 flushPendingDisplayAssets 调用
       if (!this._preloadDone) {
         const merged = (this._pendingDisplayAssets || []).concat(assets);
         // 限制暂存上限：用户在预加载期间快速移动可能触发多次 fetch，
@@ -100,6 +102,8 @@ module.exports = function (XR_CONFIG) {
       for (const entry of this.nodeList) {
         if (entry.assetId !== null) cachedIds.add(entry.assetId);
       }
+      for (const queued of this._placeQueue || []) cachedIds.add(queued.id);
+      if (this._placingAssetId != null) cachedIds.add(this._placingAssetId);
       const newAssets = assets.filter(
         (a) =>
           !cachedIds.has(a.id) && !this._isInRepeatCooldown(a.id, a.file_type),
@@ -140,7 +144,7 @@ module.exports = function (XR_CONFIG) {
 
       // 关键优化：一拿到 model 类型 asset 就立刻并行 prefetch GLB 下载（不实例化）。
       // 串行放置每次 await loadAsset 时，网络阶段已被 prefetch 完成，可直接命中
-      // xr-frame asset 缓存，避免"放置完一个 → 等下一个网络往返"的串行长尾。
+      // Three 模型缓存，避免"放置完一个 → 等下一个网络往返"的串行长尾。
       if (this.scene && this._prefetchModelAsset) {
         for (const a of assets) {
           if (a.file_type === "model" && a.file_url) {
@@ -158,52 +162,104 @@ module.exports = function (XR_CONFIG) {
       while (this._placeQueue && this._placeQueue.length > 0) {
         const asset = this._placeQueue.shift();
         // 关联匹配请求，而非素材加载完成时碰巧处于活动状态的另一轮请求。
-        const timing = this.retrievalMode === "anchor" &&
+        const timing =
+          this.retrievalMode === "anchor" &&
           this._recognitionTiming?.contentEpoch === asset._contentEpoch
-          ? this._recognitionTiming : null;
+            ? this._recognitionTiming
+            : null;
         const placementStartedAt = Date.now();
         const existingEntries = timing ? new Set(this.nodeList) : null;
-        const queueWaitMs = timing ? Math.max(0, placementStartedAt - timing.matchedAt) : null;
+        const queueWaitMs = timing
+          ? Math.max(0, placementStartedAt - timing.matchedAt)
+          : null;
         let placementError = null;
         if (timing) {
-          matchLog("素材开始放置", {
-            anchorId: timing.anchorId, assetId: asset.id, assetType: asset.file_type,
-            queueWaitMs,
-          }, "info", timing.requestId);
+          matchLog(
+            "素材开始放置",
+            {
+              anchorId: timing.anchorId,
+              assetId: asset.id,
+              assetType: asset.file_type,
+              queueWaitMs,
+            },
+            "info",
+            timing.requestId,
+          );
         }
         try {
+          this._placingAssetId = asset.id;
           await this._placeAsset(asset);
         } catch (error) {
           placementError = error;
           console.warn("[assets] 放置失败", error);
+          this.reportAssetError?.(asset, error);
+        } finally {
+          this._placingAssetId = null;
         }
         if (timing) {
           const completedAt = Date.now();
-          const current = this._recognitionTiming === timing &&
-            this.retrievalMode === "anchor" && !this._disposed && !this._retrievalPaused &&
-            timing.contentEpoch === this._contentEpoch && asset._contentEpoch === this._contentEpoch &&
-            this._matchedAnchorId === timing.anchorId && this._allowedAssetIds.has(asset.id);
+          const current =
+            this._recognitionTiming === timing &&
+            this.retrievalMode === "anchor" &&
+            !this._disposed &&
+            !this._retrievalPaused &&
+            timing.contentEpoch === this._contentEpoch &&
+            asset._contentEpoch === this._contentEpoch &&
+            this._matchedAnchorId === timing.anchorId &&
+            this._allowedAssetIds.has(asset.id);
           // _placeAsset 也可能正常返回但没有放置节点，不能把返回时间说成显示成功。
-          const placed = current && this.nodeList.some((entry) =>
-            entry.assetId === asset.id && entry.node && !entry._destroyed && !existingEntries.has(entry),
-          );
-          const outcome = !current ? "cancelled" : placementError ? "error" : placed ? "ready" : "skipped";
+          const placed =
+            current &&
+            this.nodeList.some(
+              (entry) =>
+                entry.assetId === asset.id &&
+                entry.node &&
+                !entry._destroyed &&
+                !existingEntries.has(entry),
+            );
+          const outcome = !current
+            ? "cancelled"
+            : placementError
+              ? "error"
+              : placed
+                ? "ready"
+                : "skipped";
           const fields = {
-            anchorId: timing.anchorId, assetId: asset.id, assetType: asset.file_type, outcome,
-            queueWaitMs, placementMs: Math.max(0, completedAt - placementStartedAt),
-            matchToAssetReadyMs: outcome === "ready" ? Math.max(0, completedAt - timing.matchedAt) : null,
-            captureToAssetReadyMs: outcome === "ready" && Number.isFinite(timing.captureStartedAt)
-              ? Math.max(0, completedAt - timing.captureStartedAt) : null,
+            anchorId: timing.anchorId,
+            assetId: asset.id,
+            assetType: asset.file_type,
+            outcome,
+            queueWaitMs,
+            placementMs: Math.max(0, completedAt - placementStartedAt),
+            matchToAssetReadyMs:
+              outcome === "ready"
+                ? Math.max(0, completedAt - timing.matchedAt)
+                : null,
+            captureToAssetReadyMs:
+              outcome === "ready" && Number.isFinite(timing.captureStartedAt)
+                ? Math.max(0, completedAt - timing.captureStartedAt)
+                : null,
             totalMs: Math.max(0, completedAt - timing.startedAt),
           };
-          matchLog("素材放置结束", fields, outcome === "error" ? "warn" : "info", timing.requestId);
+          matchLog(
+            "素材放置结束",
+            fields,
+            outcome === "error" ? "warn" : "info",
+            timing.requestId,
+          );
           if (outcome === "ready" && !timing.firstAssetReadyLogged) {
             timing.firstAssetReadyLogged = true;
-            matchLog("首个素材就绪", {
-              ...fields,
-              // 这里只测量放置方法完成且节点已登记，未测量 GPU 呈现的屏幕首帧。
-              readiness: "placement_complete", screenFirstFrameMeasured: false,
-            }, "info", timing.requestId);
+            matchLog(
+              "首个素材就绪",
+              {
+                ...fields,
+                // 这里只测量放置方法完成且节点已登记，未测量 GPU 呈现的屏幕首帧。
+                readiness: "placement_complete",
+                screenFirstFrameMeasured: false,
+              },
+              "info",
+              timing.requestId,
+            );
           }
         }
         // 模型放置触发 GPU 资源上传，给主线程多一点喘息时间；
@@ -226,14 +282,10 @@ module.exports = function (XR_CONFIG) {
      * @returns {{ x: number, y: number, z: number } | null}
      */
     _calcForwardPos(type) {
-      const xr = wx.getXrFrameSystem();
       const camTransform = this.getCamTransform();
       if (!camTransform) return null;
       const camPos = camTransform.position;
-      // XR-Frame 坐标系：相机 local forward = (0,0,1)（+Z 朝前，Unity 约定）
-      const wm = camTransform.worldMatrix;
-      const localFwd = xr.Vector3.createFromNumber(0, 0, 1);
-      const fwd = wm.transformDirection(localFwd);
+      const fwd = this._runtime.camera.getWorldDirection(this._forwardScratch);
       // atan2(z, x) → 以 +X 轴为 0° 的朝向角，与 cos/sin 放置约定匹配
       const camYaw = Math.atan2(fwd.z, fwd.x);
       const halfArc = ((XR_CONFIG.placeForwardArcDeg || 120) * Math.PI) / 180;
@@ -249,10 +301,13 @@ module.exports = function (XR_CONFIG) {
     },
 
     _isAssetPlacementCurrent(asset) {
-      return !this._disposed && !this._retrievalPaused &&
+      return (
+        !this._disposed &&
+        !this._retrievalPaused &&
         asset._contentEpoch === this._contentEpoch &&
         this._allowedAssetIds.has(asset.id) &&
-        (this.retrievalMode !== "anchor" || !!this._matchedAnchorId);
+        (this.retrievalMode !== "anchor" || !!this._matchedAnchorId)
+      );
     },
 
     /** 按 file_type 分发到对应的放置方法 */
@@ -260,7 +315,7 @@ module.exports = function (XR_CONFIG) {
       if (!this._isAssetPlacementCurrent(asset)) return;
       this._activePlacementEpoch = asset._contentEpoch;
       if (asset.file_type === "model") await this._placeModelAsset(asset);
-      else if (asset.file_type === "text") this._placeTextAsset(asset);
+      else if (asset.file_type === "text") await this._placeTextAsset(asset);
       else if (asset.file_type === "image") await this._placeImageAsset(asset);
       else if (asset.file_type === "audio") await this._placeAudioAsset(asset);
       else if (asset.file_type === "video") await this._placeVideoAsset(asset);

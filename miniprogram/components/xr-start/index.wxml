@@ -1,24 +1,7 @@
-<xr-scene ar-system="modes:Plane;" bind:ready="handleReady" bind:ar-ready="handleARReady" bind:tick="handleTick">
-    <xr-assets bind:progress="handleAssetsProgress" bind:loaded="handleAssetsLoaded">
-        <xr-asset-load type="gltf" asset-id="anchor" src="https://mmbizwxaminiprogram-1258344707.cos.ap-guangzhou.myqcloud.com/xr-frame/demo/ar-plane-marker.glb" />
-        <xr-asset-material asset-id="standard-mat" effect="standard" />
-        <!-- 平面贴图（气泡/头像/图片广告牌）用 unlit 的 simple 效果：
-             不跑 PBR 光照，片元开销远低于 standard；这些面是 BLEND overdraw 的大头 -->
-        <xr-asset-material asset-id="simple-mat" effect="simple" />
-        <xr-asset-load type="texture" asset-id="particle-confetti" src="/assets/confetti.png" />
-    </xr-assets>
-
-    <xr-shadow id="shadow-root" />
-
-    <xr-node>
-        <xr-ar-tracker wx:if="{{retrievalMode === 'gps'}}" mode="Plane">
-            <xr-gltf model="anchor"></xr-gltf>
-        </xr-ar-tracker>
-
-        <xr-camera id="camera" node-id="camera" clear-color="0.925 0.925 0.925 1" background="ar" is-ar-camera></xr-camera>
-    </xr-node>
-    <xr-node node-id="lights">
-        <xr-light type="ambient" color="1 1 1" intensity="3" />
-        <xr-light type="directional" rotation="180 0 0" color="1 1 1" intensity="3" />
-    </xr-node>
-</xr-scene>
+<view class="ar-renderer">
+  <canvas id="ar-canvas" type="webgl2" class="ar-canvas" bindtouchend="onCanvasTap" bindwebglcontextlost="onContextLost" bindwebglcontextrestored="onContextRestored" />
+  <view wx:if="{{!arReady}}" class="ar-message">
+    <text>{{renderError || renderStatus}}</text>
+    <button wx:if="{{renderError && canRetry}}" size="mini" bindtap="retryAR">重新启动 AR</button>
+  </view>
+</view>

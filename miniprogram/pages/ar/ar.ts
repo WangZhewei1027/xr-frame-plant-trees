@@ -47,6 +47,14 @@ Page({
     this.selectComponent("#main-frame")?.setRetrievalMode(mode);
   },
 
+  onAssetError(event: WechatMiniprogram.CustomEvent) {
+    const message = event.detail?.message || "素材加载失败";
+    const now = Date.now();
+    if (now - ((this as any)._lastAssetErrorAt || 0) < 5000) return;
+    (this as any)._lastAssetErrorAt = now;
+    wx.showToast({ title: String(message).slice(0, 50), icon: "none", duration: 3000 });
+  },
+
   onRecognitionStatus(event: WechatMiniprogram.CustomEvent) {
     if (event.detail.mode === this.data.retrievalMode) {
       this.setData({ recognitionStatus: event.detail.message });

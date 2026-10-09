@@ -18,7 +18,7 @@ function harness() {
   class ClockDate extends Date { static now() { return clock.now; } }
   const module = { exports: {} };
   const dependencies = {
-    "../../../utils/supabase": { CONFIG: {} },
+    "../../../utils/backend": { CONFIG: {} },
     "./queue": () => ({}), "./audio": () => ({}),
     "./text": {}, "./model": {}, "./image": {}, "./video": {},
     "../matching/log": (event, fields, level, requestId) => logs.push({ event, fields, level, requestId }),

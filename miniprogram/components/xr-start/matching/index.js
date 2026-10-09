@@ -143,7 +143,7 @@ module.exports = {
     this._firstRevealDone = false;
     this._matchedAnchorId = null;
     // 兜底回收此前构建异常留下的、未能登记的动态根节点。
-    const orphans = this.shadowRoot?.getChildrenByFilter?.(() => true) || [];
+    const orphans = [...(this.shadowRoot?.children || [])];
     for (const node of orphans) this._destroyNode({ node });
     if (orphans.length) matchLog("清理未登记场景节点", { count: orphans.length });
   },

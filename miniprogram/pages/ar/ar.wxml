@@ -13,6 +13,7 @@
     bind:orgconfigload="onOrgConfigLoad"
     bind:recognitionstatus="onRecognitionStatus"
     bind:recognitionframe="onRecognitionFrame"
+    bind:asseterror="onAssetError"
   />
 
   <!-- ===== 底部区域 ===== -->

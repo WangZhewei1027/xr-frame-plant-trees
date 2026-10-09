@@ -2,7 +2,7 @@
 
 ## 当前实现：VisionKit v2 + Three.js
 
-2026-10-08 根据方案选择，将 `labs/xr-three/index` 改为 **VisionKit v2 + Three.js 单画布渲染**。本页不再创建 xr-frame 场景。之前的桥接实验保留在 `labs/xr-three/bridge`，可从验证页按钮进入。原 `XR-Three-Lab` 编译模式仍可直接打开新入口。正式 `pages/ar/ar` 和 SAGE 识别流程没有迁移。
+2026-10-08 根据方案选择，将 `labs/xr-three/index` 改为 **VisionKit v2 + Three.js 单画布渲染**。本页不再创建 xr-frame 场景。之前的桥接实验保留在 `labs/xr-three/bridge`，可从验证页按钮进入。原 `XR-Three-Lab` 编译模式仍可直接打开新入口。随后正式 `pages/ar/ar` 也迁移至同一共享运行时；当前业务状态见 [迁移文档](visionkit-three-migration.md)。本页其余内容保留独立验证阶段的边界与历史记录。
 
 ### 一帧如何渲染
 
@@ -85,7 +85,7 @@
 
 ## 独立验证页
 
-历史桥接页当前路径：`labs/xr-three/bridge`。原编译模式 `XR-Three-Lab` 现打开上文的 VisionKit 新验证页。入口注册在独立子包中，正式首页没有新增入口，正式识别页面不引用 Three.js。
+历史桥接页当前路径：`labs/xr-three/bridge`。原编译模式 `XR-Three-Lab` 现打开上文的 VisionKit 新验证页。入口注册在独立子包中，正式首页没有新增实验入口。以下描述的是迁移前实验；正式识别页现已引用共享 Three.js 运行时。
 
 这不是 `independent:true` 的独立分包，仍会执行现有 app 生命周期；实验页面本身不请求 GPS、数据库、SAGE，也不读取用户参考图。唯一图片测试复用已有的本地 DHL 图片。
 

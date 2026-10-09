@@ -4,7 +4,9 @@
   "description": "",
   "scripts": {
     "build:xr-three-lab": "node scripts/build-xr-three-lab.cjs",
-    "test:xr-three-lab": "node scripts/test-xr-three-lab.cjs"
+    "test:xr-three-lab": "node scripts/test-xr-three-lab.cjs",
+    "test:ar-runtime": "node scripts/test-ar-runtime.cjs",
+    "test": "node scripts/test-xr-three-lab.cjs && node scripts/test-ar-runtime.cjs && node scripts/test-anchor-recognition.cjs && node scripts/test-capture-motion.cjs && node scripts/test-asset-timing.cjs"
   },
   "keywords": [],
   "author": "",

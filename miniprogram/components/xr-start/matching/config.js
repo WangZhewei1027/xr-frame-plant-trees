@@ -18,8 +18,5 @@ module.exports = {
   restartDistanceMeters: 1.5,
   timeoutMs: 20000,
   maxImageEdge: 640,
-  pixelConverter: "auto", // 优先 WebGL；不支持/自检失败自动回退 CPU。设为 cpu 可做真机对照。
-  // getARRawData 的设备差异需真机验证；紧密排列 YUV420，默认 NV12 / full range。
-  uvOrder: "uv", // 若颜色异常且确认原始格式为 NV21，改为 vu
-  rotation: 90, // 当前竖屏真机原始帧逆时针偏转 90°，上传前顺时针纠正；其他设备需预览核对。
+  // Native VKFrame exports apply the viewport crop. No XR YUV conversion or fixed rotation.
 };

@@ -1,7 +1,7 @@
 /**
  * 通用斥力模块：nodeList 中所有已落位的素材节点之间互相排斥。
  * 覆盖所有素材类型（text / model / image / audio / video / danmaku）。
- * 跳过仍在飞行动画中的弹幕节点，避免干扰飞入动画。
+ * 跳过手动固定落点的树和仍在飞行动画中的弹幕节点。
  *
  * 性能约定（每帧路径，禁止分配）：
  *   - Transform 用 _registerNode 时缓存的 entry.trs，不做每帧 getComponent。
@@ -19,7 +19,9 @@ module.exports = function (XR_CONFIG) {
       if (!nodeList || nodeList.length < 2) return;
 
       const REPULSION_RADIUS = XR_CONFIG.repulsionRadius || 1.5;
-      const REPULSION_STRENGTH = XR_CONFIG.repulsionStrength || 0.008;
+      const REPULSION_STRENGTH =
+        (XR_CONFIG.repulsionStrength || 0.008) *
+        Math.min(2, (this._frameDelta || 1 / 30) * 60);
       const MIN_DIST_SQ = 0.001 * 0.001; // 防止除零
       const RADIUS_SQ = REPULSION_RADIUS * REPULSION_RADIUS;
 
@@ -40,6 +42,7 @@ module.exports = function (XR_CONFIG) {
       let n = 0;
       for (let k = 0; k < nodeList.length; k++) {
         const entry = nodeList[k];
+        if (entry.repulsionEnabled === false) continue;
         const trs = entry.trs;
         if (!trs) continue;
         if (hasFlying) {
@@ -63,6 +66,7 @@ module.exports = function (XR_CONFIG) {
         offArr[base + 2] = 0;
         n++;
       }
+      trsArr.length = n;
       if (n < 2) return;
 
       for (let i = 0; i < n; i++) {
@@ -106,7 +110,7 @@ module.exports = function (XR_CONFIG) {
         const oy = offArr[ib + 1];
         const oz = offArr[ib + 2];
         if (ox === 0 && oy === 0 && oz === 0) continue;
-        trsArr[i].position.setValue(
+        trsArr[i].position.set(
           posArr[ib] + ox,
           posArr[ib + 1] + oy,
           posArr[ib + 2] + oz,

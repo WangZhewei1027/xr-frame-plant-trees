@@ -148,5 +148,21 @@ async function main() {
   vk.start(); assert.match(states.at(-1).message, /不支持 VisionKit v2/);
   console.log('PASS: session cancellation, late callbacks, 30 FPS acquisition cap, permission failures, no v1 fallback, error cleanup');
 
+  const nativeFrames = [];
+  const nativeRate = new VKSessionController({ api, gl: {}, size: () => ({ width: 480, height: 640 }),
+    maxFps: 0, now: () => time, onFrame: frame => nativeFrames.push(frame), onState() {} });
+  nativeRate.start();
+  const nativeSession = sessions.at(-1);
+  nativeSession.startCallback(0);
+  for (const timestamp of [100, 108, 116, 133, 150, 166]) {
+    time = timestamp; nativeSession.tick();
+  }
+  assert.equal(nativeFrames.length, 6, 'production must process every native RAF, including intervals shorter than 30 FPS');
+  const lateTick = nativeSession.callbacks.values().next().value;
+  nativeRate.stop(); lateTick();
+  assert.equal(nativeFrames.length, 6);
+  assert.equal(nativeSession.destroyed, 1);
+  console.log('PASS: production native RAF cadence has no added 30 FPS cap and still cancels late frames');
+
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

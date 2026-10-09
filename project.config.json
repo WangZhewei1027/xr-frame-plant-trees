@@ -43,8 +43,26 @@
   },
   "libVersion": "3.14.0",
   "packOptions": {
-    "ignore": [],
-    "include": []
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "assets/profile"
+      },
+      {
+        "type": "folder",
+        "value": "assets/bubble"
+      },
+      {
+        "type": "file",
+        "value": "assets/confetti.png"
+      }
+    ],
+    "include": [
+      {
+        "type": "file",
+        "value": "assets/ar-plane-marker.glb"
+      }
+    ]
   },
   "appid": "wxaa785b12f71e1743"
 }

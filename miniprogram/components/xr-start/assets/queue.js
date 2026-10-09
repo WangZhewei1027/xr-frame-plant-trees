@@ -1,3 +1,4 @@
+const { disposeTree } = require("../../../lib/three-runtime/resources");
 /**
  * 通用容量引擎（描述符驱动）：
  *   - 每个节点按 registry.js 声明的 descriptor.bucket 归入一个容量桶。
@@ -25,17 +26,15 @@ module.exports = function (XR_CONFIG) {
       const type = o.type || "text";
       const desc = REGISTRY[type];
       const bucket = (desc && desc.bucket) || "light";
-      const xr = wx.getXrFrameSystem();
+
       const newEntry = {
         assetId,
         node,
         billboardEl,
         // Transform 组件在注册时解析一次并缓存：每帧 tick（billboard/斥力/模型动画）
         // 直接用缓存引用，消除每帧 ~3N 次 getComponent 查找。
-        trs: node ? node.getComponent(xr.Transform) : null,
-        billboardTrs: billboardEl
-          ? billboardEl.getComponent(xr.Transform)
-          : null,
+        trs: node || null,
+        billboardTrs: billboardEl || null,
         type,
         bucket,
         bornAt: Date.now(),
@@ -43,14 +42,21 @@ module.exports = function (XR_CONFIG) {
         videoRefs: o.videoRefs || null,
         imageRefs: o.imageRefs || null,
         textRefs: o.textRefs || null,
+        dispose: o.dispose || null,
+        onTap: o.onTap || null,
+        tick: o.tick || null,
+        repulsionEnabled: o.repulsionEnabled !== false,
       };
       if (o.audioRefs?.ctx) this._pendingAudioContexts?.delete(o.audioRefs.ctx);
       // 异步加载结束时复检；快速切换回来、相同 asset id 也不能接收旧一轮节点。
       if (
-        this._disposed || this._retrievalPaused ||
-        (this.retrievalMode === "anchor" && (assetId == null || !this._matchedAnchorId)) ||
+        this._disposed ||
+        this._retrievalPaused ||
+        (this.retrievalMode === "anchor" &&
+          (assetId == null || !this._matchedAnchorId)) ||
         (assetId != null &&
-          ((o.contentEpoch ?? this._activePlacementEpoch) !== this._contentEpoch ||
+          ((o.contentEpoch ?? this._activePlacementEpoch) !==
+            this._contentEpoch ||
             !this._allowedAssetIds.has(assetId)))
       ) {
         this._destroyNode(newEntry);
@@ -77,7 +83,7 @@ module.exports = function (XR_CONFIG) {
     /** 单桶驱逐：按 cfg.evict 策略反复踢，直到成员数 <= cfg.cap。 */
     _evictBucket(bucketName, cfg, protectEntry) {
       if (!cfg) return;
-      const xr = wx.getXrFrameSystem();
+
       const camPos = this.getCamTransform()?.position;
       const minLife = XR_CONFIG.minLifetimeMs || 0;
 
@@ -108,7 +114,7 @@ module.exports = function (XR_CONFIG) {
           // farthest：XZ 位置距离最大者
           let best = -Infinity;
           for (const e of pool) {
-            const d = this._nodeDistSq(e, camPos, xr);
+            const d = this._nodeDistSq(e, camPos);
             if (d > best) {
               best = d;
               victim = e;
@@ -123,10 +129,10 @@ module.exports = function (XR_CONFIG) {
     },
 
     /** 节点到相机的 XZ 平方距离（忽略高度）；无坐标/无相机时视作最远，优先淘汰。 */
-    _nodeDistSq(entry, camPos, xr) {
+    _nodeDistSq(entry, camPos) {
       if (!camPos) return Infinity;
-      const trs = entry.trs || entry.node?.getComponent(xr.Transform);
-      const wp = trs?.worldPosition;
+      const trs = entry.trs || entry.node;
+      const wp = trs?.position;
       if (!wp) return Infinity;
       const dx = wp.x - camPos.x;
       const dz = wp.z - camPos.z;
@@ -145,7 +151,6 @@ module.exports = function (XR_CONFIG) {
       const members = this.nodeList.filter((e) => e.bucket === bucketName);
       if (members.length < cfg.cap) return true;
 
-      const xr = wx.getXrFrameSystem();
       const camPos = this.getCamTransform()?.position;
       if (!camPos || !pos) return true; // 无法判断时放行，交由后续正常驱逐处理
 
@@ -156,7 +161,7 @@ module.exports = function (XR_CONFIG) {
       const minLife = XR_CONFIG.minLifetimeMs || 0;
       for (const e of members) {
         if (now - (e.bornAt || 0) < minLife) continue; // 受保护成员不能被替换
-        if (this._nodeDistSq(e, camPos, xr) > candDistSq) return true;
+        if (this._nodeDistSq(e, camPos) > candDistSq) return true;
       }
       return false;
     },
@@ -209,24 +214,16 @@ module.exports = function (XR_CONFIG) {
       if (!entry || entry._destroyed) return;
       entry._destroyed = true;
       const node = entry.node;
-      const xr = this.xr || wx.getXrFrameSystem();
-      // 清空文字并隐藏子树，再离开场景，避免文字绘制资源晚于父节点移除。
-      const hide = (element) => {
-        try { element?.getComponent(xr.Transform)?.setData({ visible: false }); } catch (_) {}
-        try { if (xr.Text) element?.getComponent(xr.Text)?.setData({ value: "" }); } catch (_) {}
-      };
-      try { entry.textRefs?.textEl?.setAttribute("value", ""); } catch (_) {}
-      hide(node);
-      try { node?.dfs?.(hide); } catch (_) {}
+      if (node) {
+        node.visible = false;
+        node.removeFromParent();
+      }
       try {
-        (node?.parent || this.shadowRoot)?.removeChild(node);
+        entry.dispose?.();
       } catch (error) {
-        console.warn("[assets] 移除节点失败", error);
+        console.warn("[assets] release failed", error);
       }
-      // 这里只处理自己创建的动态节点；release 触发 Text 等组件的资源回收。
-      try { node?.release?.(); } catch (error) {
-        console.warn("[assets] 释放节点失败", error);
-      }
+      disposeTree(node);
       if (entry.audioRefs && this._audioEntries) {
         const ai = this._audioEntries.indexOf(entry);
         if (ai !== -1) this._audioEntries.splice(ai, 1);

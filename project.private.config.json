@@ -24,11 +24,18 @@
     "miniprogram": {
       "list": [
         {
-          "name": "XR-Three-Lab",
-          "pathName": "labs/xr-three/index",
+          "name": "pages/index/index",
+          "pathName": "pages/index/index",
           "query": "",
           "scene": null,
           "launchMode": "default"
+        },
+        {
+          "name": "XR-Three-Lab",
+          "pathName": "labs/xr-three/index",
+          "query": "",
+          "launchMode": "default",
+          "scene": null
         }
       ]
     }

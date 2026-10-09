@@ -83,8 +83,9 @@ function instance(logs, captureOverrides = {}) {
   const matching = load(componentPath + "matching/index.js", {
     ...(logs ? { "./log": (event, fields, level, requestId) => logs.push({ event, fields, level, requestId }) } : {}),
     "./config": config,
-    "../../../utils/supabase": {
+    "../../../utils/backend": {
       CONFIG: { workspaceId: "workspace" },
+      RECOGNIZE_API: { baseUrl: "", path: "/api/miniapp/anchors/recognize" },
       getPublicApiHeaders: () => { throw new Error("Recognition must not request credentials"); },
     },
     "./capture": {
@@ -171,11 +172,11 @@ test("mini-program relative requires resolve without Node directory fallback", (
   inspect(sourceRoot);
 });
 
-test("production recognition endpoint calls the public Supabase Edge Function directly", () => {
+test("production recognition uses the shared backend endpoint without Edge region or credentials", () => {
   const production = require(path.join(root, componentPath, "matching/config.js"));
-  assert.equal(production.apiBaseUrl, "https://mkdfezaufjhrfjkfqlbj.supabase.co");
-  assert.equal(production.apiPath, "/functions/v1/recognize-anchor");
-  assert.equal(production.functionRegion, "ap-south-1");
+  assert.equal(production.apiBaseUrl, "");
+  assert.equal(production.apiPath, "/api/miniapp/anchors/recognize");
+  assert.equal(production.functionRegion, "");
   assert.equal(production.Authorization, undefined);
   assert.equal(production.apikey, undefined);
 });
@@ -193,7 +194,7 @@ test("custom API path and function region preserve anonymous upload and trace id
     assert.equal(uploaded.url, "https://edge.example.test/functions/v1/recognize-anchor?workspace_id=workspace");
     assert.equal(uploaded.header["x-region"], "ap-southeast-1");
     assert.equal(uploaded.header["X-Recognition-Request-Id"], logs.find(e => e.event === "开始识别").requestId);
-    assert.deepEqual(Object.keys(uploaded.header).map(key => key.toLowerCase()).sort(), ["x-recognition-request-id", "x-region"]);
+    assert.deepEqual(Object.keys(uploaded.header).map(key => key.toLowerCase()).sort(), ["x-client-id", "x-recognition-request-id", "x-region"]);
     assert.equal(uploaded.name, "image");
     assert.equal(uploaded.formData.coordinate_system, "wgs84");
     const upload = logs.find(e => e.event === "上传识别请求").fields;
@@ -204,7 +205,7 @@ test("custom API path and function region preserve anonymous upload and trace id
     config.functionRegion = "";
     const automatic = instance();
     await automatic.recognizeAnchor();
-    assert.deepEqual(Object.keys(uploaded.header), ["X-Recognition-Request-Id"]);
+    assert.deepEqual(Object.keys(uploaded.header), ["X-Recognition-Request-Id", "X-Client-Id"]);
   } finally {
     config.apiBaseUrl = previous.apiBaseUrl;
     if (previous.apiPath === undefined) delete config.apiPath; else config.apiPath = previous.apiPath;
@@ -858,7 +859,7 @@ test("timing summary separates GPS, capture, HTTP, server and display dispatch w
     });
     x._locateForRecognition = async () => {
       advance(12);
-      return { latitude: 31, longitude: 121, accuracy: 10, sampledAt: Date.now() };
+      return { latitude: 31, longitude: 121, accuracy: 10, sampledAt: Date.now(), source: "fresh" };
     };
     const clear = x._clearRemoteAssets;
     x._clearRemoteAssets = function () { advance(7); clear.call(this); };
@@ -904,7 +905,7 @@ test("timing summary separates GPS, capture, HTTP, server and display dispatch w
   });
 });
 
-test("cadence logs distinguish the one-second target from actual capture spacing and cached GPS", async () => {
+test("cadence logs distinguish the one-second target from actual capture spacing and live GPS reuse", async () => {
   assert.equal(require(path.join(root, componentPath, "matching/config.js")).intervalMs, 1000);
   config.intervalMs = 1000;
   try {
@@ -922,7 +923,7 @@ test("cadence logs distinguish the one-second target from actual capture spacing
       assert.equal(starts[1].fields.actualCaptureIntervalMs, 1200);
       assert.equal(starts[1].fields.intervalOverrunMs, 200);
       const summaries = logs.filter(e => e.event === "识别耗时汇总");
-      assert.equal(summaries[1].fields.gpsSource, "cache");
+      assert.equal(summaries[1].fields.gpsSource, "watch");
       assert.equal(summaries[1].fields.transportAndPlatformEstimateMs, null);
       assert.equal(summaries[1].fields.serverTimingsMs, null);
     });
@@ -935,7 +936,7 @@ test("failed capture records partial elapsed time and leaves unexecuted stages n
     const x = instance(logs, { captureCamera: async () => { advance(17); throw new Error("capture failed"); } });
     x._locateForRecognition = async () => {
       advance(10);
-      return { latitude: 31, longitude: 121, accuracy: 10, sampledAt: Date.now() };
+      return { latitude: 31, longitude: 121, accuracy: 10, sampledAt: Date.now(), source: "fresh" };
     };
     await x.recognizeAnchor();
     const summary = logs.find(e => e.event === "识别耗时汇总").fields;
@@ -992,9 +993,9 @@ test("old GPS RPC result is discarded after switching", async () => {
   let resolve;
   const noop = () => ({});
   const assets = load(componentPath + "assets/index.js", {
-    "../../../utils/supabase": {
+    "../../../utils/backend": {
       CONFIG: {},
-      supabaseRpc: () =>
+      backendRpc: () =>
         new Promise((r) => {
           resolve = r;
         }),
@@ -1025,7 +1026,7 @@ test("old GPS RPC result is discarded after switching", async () => {
 function realAssetMethods() {
   const noop = () => ({});
   return load(componentPath + "assets/index.js", {
-    "../../../utils/supabase": { CONFIG: {} },
+    "../../../utils/backend": { CONFIG: {} },
     "./queue": noop, "./audio": noop, "./text": {}, "./model": {}, "./image": {}, "./video": {},
   })(require(path.join(root, componentPath, "config.js")));
 }
@@ -1104,112 +1105,7 @@ test("preload completion after a mode switch cannot revive queued GPS content", 
   assert.equal(x._pendingDisplayAssets.length, 0);
 });
 
-test("an image finishing after switching away and back releases its texture without attaching a node", async () => {
-  const x = instance();
-  x._isAssetPlacementCurrent = realAssetMethods()._isAssetPlacementCurrent;
-  x._matchedAnchorId = "a";
-  x._allowedAssetIds.add("same");
-  x.nodeIdCounter = 0;
-  let finishLoad;
-  const released = [];
-  x.scene = {
-    createElement() { throw new Error("stale image attached"); },
-    assets: { releaseAsset(type, id) { released.push([type, id]); } },
-  };
-  global.wx.getStorageSync = () => ({ width: 100, height: 100 });
-  x._loadImageTexture = () => new Promise(resolve => { finishLoad = resolve; });
-  const image = load(componentPath + "assets/image.js");
-  const run = image._placeImageAsset.call(x, { id: "same", file_url: "image.jpg", _contentEpoch: 0 });
-  x.setRetrievalMode("gps");
-  x.recognizeAnchor = () => {};
-  x.setRetrievalMode("anchor");
-  x._matchedAnchorId = "a";
-  x._allowedAssetIds.add("same");
-  finishLoad();
-  await run;
-  assert.deepEqual(released, [["texture", "image-tex-0"]]);
-});
-
-test("an obsolete video releases its decoder before material or scene creation", async () => {
-  const x = instance();
-  x._isAssetPlacementCurrent = realAssetMethods()._isAssetPlacementCurrent;
-  x._matchedAnchorId = "a";
-  x._allowedAssetIds.add("video");
-  x.nodeIdCounter = 0;
-  let finishLoad;
-  const released = [];
-  x.scene = { assets: {
-    loadAsset() { return new Promise(resolve => { finishLoad = resolve; }); },
-    getAsset() { throw new Error("stale video created material"); },
-    releaseAsset(type, id) { released.push([type, id]); },
-  } };
-  const video = load(componentPath + "assets/video.js", { "../effects/transparent-video-tbb": {} });
-  const run = video._placeVideoAsset.call(x, { id: "video", file_url: "video.mp4", _contentEpoch: 0 });
-  x.setRetrievalMode("gps");
-  finishLoad({ value: {} });
-  await run;
-  assert.deepEqual(released, [["video-texture", "video-tbb-0"]]);
-});
-
-for (const switchAt of ["download", "gpu-yield"]) {
-  test(`model cancelled during ${switchAt} cannot reappear after a mode switch`, async () => {
-    const x = instance();
-    const frames = [];
-    const model = load(componentPath + "assets/model.js", {}, { setTimeout: cb => frames.push(cb) });
-    const queue = load(componentPath + "assets/queue.js")({});
-    x._isAssetPlacementCurrent = realAssetMethods()._isAssetPlacementCurrent;
-    x._registerNode = queue._registerNode;
-    x._destroyNode = queue._destroyNode;
-    x._enforceCapacity = () => {};
-    x._wouldSurvive = () => true;
-    x._calcForwardPos = () => ({ x: 0, y: 0, z: 2 });
-    x._matchedAnchorId = "a";
-    x._allowedAssetIds.add("model");
-    x.nodeIdCounter = 0;
-    const attached = new Set();
-    x.shadowRoot = { addChild: node => attached.add(node), removeChild: node => attached.delete(node) };
-    let finishLoad;
-    let created = 0;
-    const xr = { Transform: "Transform", GLTF: "GLTF", XRNode: "node", XRGLTF: "gltf" };
-    global.wx.getXrFrameSystem = () => xr;
-    x.scene = {
-      assets: { loadAsset: () => new Promise(resolve => { finishLoad = resolve; }) },
-      createElement() {
-        created++;
-        const trs = { position: {}, scale: { setValue() {} } };
-        return { addChild() {}, getComponent(type) {
-          if (type === "Transform") return trs;
-          if (type === "GLTF") return { setData() {}, calcTotalBoundBox() { throw new Error("stale model touched after yield"); } };
-          return null;
-        } };
-      },
-    };
-    const run = model._placeModelAsset.call(x, { id: "model", file_url: "model.glb", _contentEpoch: 0 });
-    if (switchAt === "gpu-yield") {
-      finishLoad({ value: {} });
-      await flush();
-      frames.shift()();
-      await flush();
-      assert.equal(attached.size, 1);
-      assert.equal(x.nodeList.length, 1);
-    }
-    x.setRetrievalMode("gps");
-    assert.equal(attached.size, 0);
-    x.recognizeAnchor = () => {};
-    x.setRetrievalMode("anchor");
-    x._matchedAnchorId = "a";
-    x._allowedAssetIds.add("model");
-    if (switchAt === "download") {
-      finishLoad({ value: {} });
-      await flush();
-    }
-    frames.shift()();
-    await run;
-    assert.equal(attached.size, 0);
-    assert.equal(x.nodeList.length, 0);
-    if (switchAt === "download") assert.equal(created, 0);
-  });
-}
+// Three image/model late-load cancellation and video ownership live in test-ar-runtime.cjs.
 
 test("explicit placement generation rejects stale registration even if component generation advanced", () => {
   instance();
@@ -1221,34 +1117,6 @@ test("explicit placement generation rejects stale registration even if component
   assert.equal(x.nodeList.length, 0);
   queue._registerNode.call(x, "same", null, null, { type: "model", contentEpoch: 2 });
   assert.equal(x.nodeList.length, 1);
-});
-
-test("anchor mode suppresses tap-to-plant and local danmaku while GPS trees are registered for cleanup", () => {
-  instance();
-  let component;
-  global.Component = c => { component = c; };
-  const noop = () => ({});
-  load(componentPath + "index.js", {
-    "./preload": {}, "./gps": {}, "./navigation": {}, "./matching/index": {},
-    "../../utils/supabase": { CONFIG: {} }, "../common/share-behavior": { default: {} },
-    "./assets/index": noop, "./assets/huge": noop, "./effects/danmaku": noop,
-    "./effects/repulsion": noop, "./effects/confetti": noop,
-  });
-  delete global.Component;
-  const methods = component.methods;
-  const x = { retrievalMode: "anchor", scene: { event: { addOnce() {} }, createElement() { throw new Error("unexpected tree"); } }, placeNode: methods.placeNode };
-  methods.placeNode.call(x);
-  const danmaku = load(componentPath + "effects/danmaku.js")({});
-  danmaku.showDanmakuInXR.call(x, "test");
-  const element = { getComponent() { return { setData() {}, scale: { setValue() {} } }; } };
-  let registered;
-  x.retrievalMode = "gps";
-  x.scene.createElement = () => element;
-  x.scene.ar = { placeHere() {} };
-  x.shadowRoot = { addChild() {} };
-  x._registerNode = (id, node) => { registered = node; };
-  methods.placeNode.call(x);
-  assert.equal(registered, element);
 });
 
 test("preview keeps the exact completed upload and cleans replacement, cancellation and disposal", async () => {
@@ -1300,35 +1168,7 @@ test("turning off frame preview preserves immediate temporary-file cleanup", asy
   assert.equal(x._recognitionFrame, undefined);
   assert.ok(removed.includes(uploaded.filePath));
 });
-test("clockwise portrait correction preserves all pixels of a landscape camera frame", () => {
-  const { convertFrame } = load(componentPath + "matching/capture.js");
-  const raw = { width: 4, height: 2,
-    yBuffer: Uint8Array.from([10,20,30,40,50,60,70,80]).buffer,
-    uvBuffer: Uint8Array.from([128,128,128,128]).buffer };
-  const corrected = convertFrame(raw);
-  assert.equal(corrected.width, 2);
-  assert.equal(corrected.height, 4);
-  const pixels = Array.from(corrected.data).filter((_, i) => i % 4 === 0);
-  assert.deepEqual(pixels, [50,10,60,20,70,30,80,40]);
-});
-test("YUV neutral pixels, rotation and malformed layout", () => {
-  const { convertFrame } = load(componentPath + "matching/capture.js");
-  const raw = {
-    width: 2,
-    height: 2,
-    yBuffer: Uint8Array.from([0, 64, 128, 255]).buffer,
-    uvBuffer: Uint8Array.from([128, 128]).buffer,
-  };
-  const a = convertFrame(raw, { rotation: 0 });
-  assert.deepEqual(
-    Array.from(a.data.slice(0, 8)),
-    [0, 0, 0, 255, 64, 64, 64, 255],
-  );
-  const b = convertFrame(raw, { rotation: 90 });
-  assert.equal(b.data[0], 128);
-  assert.equal(b.data[4], 0);
-  assert.throws(() => convertFrame({ ...raw, width: 4 }), /格式不支持/);
-});
+// Native VisionKit capture replaces the removed XR YUV conversion; see test-ar-runtime.cjs.
 (async () => {
   for (const [name, fn] of tests) {
     await fn();
