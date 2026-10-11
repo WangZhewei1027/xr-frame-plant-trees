@@ -1,8 +1,8 @@
 # AR 素材来源切换
 
-当前识别链路为：小程序上传 JPEG 和 GPS → Web 平台 `POST https://spatialmemory.online/api/miniapp/anchors/recognize?workspace_id=…`（阿里云上海，与数据库、SAGE 模型同地域）→ GPS 候选与参考特征查询 → 阿里云 SAGE 推理 → 返回匹配点及其关联素材。管理端继续负责匹配点、参考图及关联素材管理。请求/响应协议与原 Supabase Edge Function 一致（`X-Recognition-Request-Id` 回显、`data.request_id`、`diagnostics`），不再需要 `x-region` 头。所有数据接口见 `miniprogram/utils/backend.ts` 与 Web 仓库的 `docs/miniapp-api.md`。
+当前识别链路为：小程序上传 JPEG 和 GPS → 所选 Web 后端 `POST /api/miniapp/anchors/recognize?workspace_id=…` → GPS 候选与参考特征查询 → 按服务端配置调用 SAGE 推理 → 返回匹配点及其关联素材。管理端继续负责匹配点、参考图及关联素材管理。请求/响应协议与原 Supabase Edge Function 一致（`X-Recognition-Request-Id` 回显、`data.request_id`、`diagnostics`），不再需要 `x-region` 头。所有数据接口见 `miniprogram/utils/backend.ts` 与 Web 仓库的 `docs/miniapp-api.md`。
 
-> 2026-10-08 起临时改为直连 `https://139.196.189.102`（域名等待 ICP 备案）。微信不允许 IP 作为服务器域名，只能在开发者工具「不校验合法域名」或真机「打开调试」时使用；备案通过后改回域名（只需改 `utils/backend.ts` 的 `API_BASE_URL`）。
+> 2026-10-11 起，develop 使用本地 Web `http://192.168.1.7:3000`，trial／release 保留 `https://139.196.189.102`。地址集中在 `utils/backend-environment.ts`，连接步骤见[本地开发](local-development.md)。线上 IP 是等待 ICP 备案期间的原有临时配置；备案通过后修改 `ONLINE_API_BASE_URL` 并配置合法域名。开发者工具需“不校验合法域名”，真机开发需“打开调试”。
 
 ## 当前渲染与取图
 
@@ -24,7 +24,7 @@
 
 ## 接口配置
 
-`miniprogram/utils/backend.ts` 的 `API_BASE_URL` 是当前唯一公共后端地址。匹配配置沿用它：
+`miniprogram/utils/backend.ts` 按 `backend-environment.ts` 的环境配置选择 `API_BASE_URL`，普通数据与识别上传共用该地址。匹配配置保持地址为空以沿用环境选择：
 
 ```js
 apiBaseUrl: "", // 使用 backend.ts 的 RECOGNIZE_API.baseUrl

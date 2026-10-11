@@ -12,7 +12,7 @@ A WeChat Mini Program that renders a location-based AR experience. Users scan a 
 
 - **Open the project root in WeChat DevTools** (微信开发者工具). `project.config.json` points `miniprogramRoot` at `miniprogram/`. AppID is `wxaa785b12f71e1743`, base library `3.14.0`.
 - **Preview / debug** happens inside DevTools (Simulator + Preview QR). VisionKit needs **v2 + WebGL2 on a real device via Preview**; the simulator does not run the AR camera. Enter the real AR page from the index page, not only the lab.
-- **Backend address**: `API_BASE_URL` in `utils/backend.ts` is temporarily the server IP `https://139.196.189.102` while the domain awaits ICP filing. WeChat refuses an IP as a server domain, so DevTools needs "不校验合法域名" (`urlCheck: false` in `project.private.config.json`) and real devices need "打开调试". Switch back to the domain once filing passes.
+- **Backend address**: `utils/backend-environment.ts` routes `envVersion=develop` to the local Web backend (`http://192.168.1.7:3000`; update the LAN address when changing networks), and `trial`/`release` to the existing `https://139.196.189.102`. Data requests and recognition uploads share this selection; failures never fall back to production. See `docs/local-development.md` for startup and device access. DevTools needs "不校验合法域名" and real devices need "打开调试". The online IP remains temporary pending ICP filing and domain whitelist setup.
 - **Entry with params**: the app expects `organizationId` / `workspaceId` in the launch query (from a scanned QR). Without them, `DEFAULT_CONFIG` in `utils/backend.ts` (东明 org) is used, so it still runs.
 - `npm test` is the local regression. If asked to typecheck, run `npx tsc --noEmit` at the repo root (config already excludes `node_modules`).
 

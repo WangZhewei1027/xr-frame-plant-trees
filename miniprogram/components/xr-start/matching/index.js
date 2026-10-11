@@ -283,9 +283,12 @@ module.exports = {
       return;
     const base = (config.apiBaseUrl || RECOGNIZE_API.baseUrl).replace(/\/+$/, "");
     const apiPath = config.apiPath || RECOGNIZE_API.path;
-    if (!/^https:\/\/[^/]+$/.test(base) || !/^\/[a-zA-Z0-9/_-]+$/.test(apiPath) || !CONFIG.workspaceId) {
+    // HTTP 仅允许 backend.ts 为开发环境选定的地址；线上仍要求 HTTPS。
+    const validApiOrigin = /^https:\/\/[^/]+$/.test(base) ||
+      (base === RECOGNIZE_API.baseUrl && /^http:\/\/[^/]+$/.test(base));
+    if (!validApiOrigin || !/^\/[a-zA-Z0-9/_-]+$/.test(apiPath) || !CONFIG.workspaceId) {
       matchLog("配置不完整，无法发起识别", {
-        validApiOrigin: /^https:\/\/[^/]+$/.test(base),
+        validApiOrigin,
         workspaceConfigured: !!CONFIG.workspaceId,
       }, "warn");
       this._recognitionStatus(

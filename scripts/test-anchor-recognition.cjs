@@ -573,6 +573,20 @@ test("GPS mode and missing endpoint never upload", async () => {
   assert.equal(x._nextRecognitionAt, Infinity);
   assert.match(x.statuses.at(-1), /配置/);
 });
+test("HTTP overrides outside the selected development backend never upload", async () => {
+  const previous = config.apiBaseUrl;
+  try {
+    config.apiBaseUrl = "http://other.example.test:3000";
+    const x = instance();
+    uploaded = null;
+    await x.recognizeAnchor();
+    assert.equal(uploaded, null);
+    assert.equal(x._nextRecognitionAt, Infinity);
+    assert.match(x.statuses.at(-1), /配置/);
+  } finally {
+    config.apiBaseUrl = previous;
+  }
+});
 test("poor GPS accuracy fails closed", async () => {
   const x = instance();
   global.wx.getLocation = (opts) =>

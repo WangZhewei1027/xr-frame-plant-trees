@@ -8,6 +8,7 @@ const virtualFiles = new Map();
 let lastJPEGOptions, component;
 const wx = {
   env: { USER_DATA_PATH: "/tmp/ar-test" },
+  getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
   getStorageSync: () => "",
   setStorageSync() {},
   base64ToArrayBuffer: (value) => {
@@ -643,6 +644,7 @@ async function main() {
   host._nextRecognitionAt = 0;
   host.resetCaptureTiming(0);
   wx.uploadFile = (options) => {
+    assert.ok(options.url.startsWith("http://192.168.1.7:3000/api/miniapp/anchors/recognize?"));
     Promise.resolve().then(() =>
       options.success({
         statusCode: 200,
