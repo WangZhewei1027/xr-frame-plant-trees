@@ -19,25 +19,6 @@
     "checkInvalidKey": true,
     "ignoreDevUnusedFiles": true
   },
-  "libVersion": "3.14.0",
-  "condition": {
-    "miniprogram": {
-      "list": [
-        {
-          "name": "pages/index/index",
-          "pathName": "pages/index/index",
-          "query": "",
-          "scene": null,
-          "launchMode": "default"
-        },
-        {
-          "name": "XR-Three-Lab",
-          "pathName": "labs/xr-three/index",
-          "query": "",
-          "launchMode": "default",
-          "scene": null
-        }
-      ]
-    }
-  }
+  "libVersion": "3.17.4",
+  "condition": {}
 }

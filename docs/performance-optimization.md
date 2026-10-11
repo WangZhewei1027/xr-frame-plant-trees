@@ -1,5 +1,7 @@
 # 小程序性能优化总结
 
+> **⚠️ 2026-10-09 更新**：本文记录的是 xr-frame 时期的优化。正式 AR 页 `pages/ar/ar` 已切换为 VisionKit v2 + Three.js（见 [`visionkit-three-migration.md`](visionkit-three-migration.md)），xr-frame 专有机制已不存在：`loadAsset` 共享 Promise / djb2 `assetId`（3.1、3.2、4、8、10）、`calcTotalBoundBox` 与包围盒缓存（3.4、3.5）、`setData` 实例化、`preload.js` 与 `handleReady` 预热（2.3、2.4）、`_tickPhase` 轮转（2.5）、音频 `wx.saveFile` / 图片 `wx.getImageInfo` 的 Storage 缓存（5、6）。当前对应实现：按 URL 引用计数 + 空闲 LRU 的 `ModelCache`（`lib/three-runtime/resources.js`，上限 `maxCachedModelUrls` 8 / `maxCachedHugeUrls` 3），`instantiateModel` 用 `THREE.Box3` 归一化，`handleTick` 每帧跑全部 tick；串行放置队列与 stagger（3.6）、斥力优化（7）、GPS 监听（2.2）仍然有效。`_prefetchModelAsset`（3.3）目前仅被引用、未定义，即当前没有并行 prefetch。xr-frame 写法仅适用于 `labs/xr-three/xr-view/` 与 `xr-frame-demo-master/`（xr-frame 相机 forward 为 +Z，Three 为 −Z）。
+
 本文记录针对 xr-frame AR 小程序的一轮系统性能优化，覆盖网络、模型加载、渲染、定位、tick 调度五大维度。优化目标：让用户感知不到加载与放置过程的卡顿。
 
 ---
@@ -28,8 +30,8 @@
 
 ```ts
 const [orgRes, wsRes] = await Promise.all([
-  supabaseGet("organization", { id: `eq.${orgId}` }),
-  supabaseGet("workspace",    { id: `eq.${wsId}`  }),
+  fetchOrganizations([orgId]).catch(() => null),
+  fetchWorkspaces([wsId]).catch(() => null),
 ]);
 this.setData({ orgName, wsName, loaded: true });
 ```
@@ -45,7 +47,7 @@ wx.startLocationUpdate({
 });
 ```
 
-### 2.3 资源预热并行化 — [components/xr-start/preload.js](../miniprogram/components/xr-start/preload.js)
+### 2.3 资源预热并行化 — `components/xr-start/preload.js`（已随 Three 迁移删除，见文首说明）
 
 原本 `loadProfileTextures` await 全部 31 张头像才返回。改为只 await 前 `PRIORITY_COUNT = 8` 张，剩余 23 张作为 background 任务异步触发，不阻塞 `handleReady`。
 
@@ -262,7 +264,7 @@ if (!size) {
 - 非模型素材（图片/气泡/profile）：`40ms`
 - 模型素材：`120ms`（给上一次 GPU 上传留缓冲）
 
-`_pendingDisplayAssets` 长度上限 `maxNewNodeCount * 2`，防止滚动批量产生时队列爆涨。
+`_pendingDisplayAssets` 长度上限 `buckets.light.cap * 2`（40），防止滚动批量产生时队列爆涨。
 
 ### 3.7 三种场景的决策路径
 
@@ -346,9 +348,9 @@ flowchart LR
 
 [assets/audio.js](../miniprogram/components/xr-start/assets/audio.js)：
 
-- 耳机 GLB 用固定 assetId `audio-headphone-shared`，模块级 `__headphoneModelPromise` 缓存，5 个音频共用同一份解析结果
-- `tickAudioVolume` 跳过条件：相机移动 < 5cm **且** 距上次更新 < 500ms（音量衰减不需要 60fps）
-- 持久化缓存音频文件：首次 `wx.downloadFile` 后 `wx.saveFile`，路径以 `audio:saved:${url}` 写入 Storage，下次直接复用本地路径
+- 耳机 GLB（`/assets/headphone.glb`）经普通模型的 `ModelCache.acquire` 共用同一份解析结果（历史：固定 assetId `audio-headphone-shared` + `__headphoneModelPromise`）
+- `tickAudioVolume` 跳过条件：距上次更新 < 100ms（音量衰减不需要 60fps；历史版本另有相机移动 < 5cm 条件）
+- 音频文件每次 `download` 到临时路径，节点销毁时删除；历史的 `wx.saveFile` + `audio:saved:${url}` Storage 缓存已移除
 
 ---
 
@@ -356,7 +358,7 @@ flowchart LR
 
 [assets/image.js](../miniprogram/components/xr-start/assets/image.js)：
 
-`wx.getImageInfo` 结果按 URL 缓存到 Storage（key `imgInfo:dim:${url}`），命中即跳过网络往返，纹理实例化前减少一次 RTT。
+历史：`wx.getImageInfo` 结果按 URL 缓存到 Storage（key `imgInfo:dim:${url}`）。当前 `loadTexture`（`lib/three-runtime/resources.js`）直接下载并经 `canvas.createImage` 解码为 `THREE.Texture`，宽高取自解码结果，不再走 `getImageInfo`，也没有 Storage 缓存。
 
 ---
 
@@ -409,8 +411,8 @@ e.model.instantiate is not a function
 
 ## 10. 维护要点
 
-1. **不要再用 `const { value } = await scene.assets.loadAsset(...)`**——一律走 `__getOrLoadModel` 之类的包装。
-2. **不要为相同 URL 生成动态 assetId**——必然丢缓存。
-3. **新增 tick 计算**优先加入 `_tickPhase` 轮转，不要直接塞 `handleTick` 主体。
-4. **新增异步加载**优先考虑 Promise 缓存 + prefetch + 让一帧的组合模式。
-5. **不要轻易在 `loadAsset` / `setData` / `calcTotalBoundBox` 之间不让帧**——会立即出现卡顿。
+1. **模型一律经 `ModelCache.acquire(url)` 取得句柄**，并在节点 `dispose` 时 `handle.release()`；放弃的加载要 `disposeTree(handle.object)` 后再 `release()`（历史：`__getOrLoadModel` 包装 `loadAsset`）。
+2. **不要绕过 `ModelCache` 自行 `loadGLTF`**——必然丢缓存与引用计数。
+3. **新增 tick 计算**必须零分配、O(N)，并复用 `entry.trs` / scratch 数组；当前 `handleTick` 每帧跑全部 tick，没有 `_tickPhase` 轮转。
+4. **新增异步加载**在每个 `await` 之后用 `_isAssetPlacementCurrent` 复检，并保持串行放置 + stagger。
+5. 历史：`loadAsset` / `setData` / `calcTotalBoundBox` 之间让帧的规则已随 xr-frame 退出；当前靠串行队列和 stagger（模型 ≥120ms）避免扎堆。

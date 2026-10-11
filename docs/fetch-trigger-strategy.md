@@ -51,7 +51,7 @@ if netDisplacement >= 5m AND 冷却已过 → fetchNearbyAssets(); _fetchAnchorX
 
 ### 双重保护：刷新冷却
 
-触发条件除了位移判断，还叠加了一个时间冷却（`fetchCooldownMs: 5000`）：
+触发条件除了位移判断，还叠加了一个时间冷却（`fetchCooldownMs: 3000`）：
 
 ```js
 now - this._lastFetchTime >= XR_CONFIG.fetchCooldownMs
@@ -64,8 +64,8 @@ now - this._lastFetchTime >= XR_CONFIG.fetchCooldownMs
 
 | 参数 | 位置 | 默认值 | 说明 |
 |---|---|---|---|
-| `distanceThreshold` | `XR_CONFIG` in `index.js` | `5` | 参考点到当前位置的最小触发距离（XR 世界米） |
-| `fetchCooldownMs` | `XR_CONFIG` in `index.js` | `5000` | 两次拉取之间的最小冷却时长（毫秒） |
+| `distanceThreshold` | `XR_CONFIG` in `config.js` | `5` | 参考点到当前位置的最小触发距离（XR 世界米） |
+| `fetchCooldownMs` | `XR_CONFIG` in `config.js` | `3000` | 两次拉取之间的最小冷却时长（毫秒） |
 
 ## 相关状态字段
 
@@ -76,12 +76,12 @@ now - this._lastFetchTime >= XR_CONFIG.fetchCooldownMs
 
 ## 代码位置
 
-- 触发逻辑：[`index.js`](../../miniprogram/components/xr-start/index.js) → `handleTick()`
-- 实际拉取：[`assets.js`](../../miniprogram/components/xr-start/assets.js) → `fetchNearbyAssets()`
-- GPS 首次触发：[`gps.js`](../../miniprogram/components/xr-start/gps.js) → `updateGPS()` （首次定位时的一次性触发，与此策略独立）
+- 触发逻辑：[`index.js`](../miniprogram/components/xr-start/index.js) → `handleTick()`
+- 实际拉取：[`assets/index.js`](../miniprogram/components/xr-start/assets/index.js) → `fetchNearbyAssets()`
+- 首次触发：[`gps.js`](../miniprogram/components/xr-start/gps.js) → `updateGPS()` 首次定位与 `handleARReady()` 共同调用 `_maybeStartFirstFetch()`，GPS 与 AR 都就绪后再等 `firstFetchDelayMs`（1000ms）触发首批拉取，与此策略独立
 
 ## 调参建议
 
 - **拉取太频繁**：调大 `distanceThreshold`（如 8–10）或 `fetchCooldownMs`（如 10000）
 - **拉取太迟钝**：调小 `distanceThreshold`（如 3）；不建议低于 2，否则漂移可能偶发误触发
-- **在 AR 追踪不稳定设备上偶发误触发**：把 `distanceThreshold` 从 5 调至 8，同时将 `fetchCooldownMs` 从 5000 调至 8000
+- **在 AR 追踪不稳定设备上偶发误触发**：把 `distanceThreshold` 从 5 调至 8，同时将 `fetchCooldownMs` 从 3000 调至 8000

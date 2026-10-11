@@ -45,22 +45,22 @@
   "packOptions": {
     "ignore": [
       {
-        "type": "folder",
-        "value": "assets/profile"
+        "value": "assets/profile",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "assets/bubble"
+        "value": "assets/bubble",
+        "type": "folder"
       },
       {
-        "type": "file",
-        "value": "assets/confetti.png"
+        "value": "assets/confetti.png",
+        "type": "file"
       }
     ],
     "include": [
       {
-        "type": "file",
-        "value": "assets/ar-plane-marker.glb"
+        "value": "assets/ar-plane-marker.glb",
+        "type": "file"
       }
     ]
   },

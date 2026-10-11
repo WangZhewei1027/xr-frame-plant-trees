@@ -18,7 +18,7 @@ Storage 上次扫码参数（key: config:scan:v1）
 
 ## 实现位置
 
-`miniprogram/utils/supabase.ts`
+`miniprogram/utils/backend.ts`
 
 ### 模块初始化时（加载即生效）
 
@@ -115,7 +115,7 @@ interface ScanHistoryEntry {
 
 1. **当前选中项**：`fetchNames()`（onLoad / 切换时）总会实时拉取并经 `recordScanHistory` 回填，因此当前 org/workspace 名称始终最新。
 2. **整个历史列表**：onLoad 首屏渲染后异步调用 `refreshHistoryNames()`，用两次
-   `id=in.(…)` 批量请求（org / workspace 各一次）覆盖全部历史条目，名称有变化时写回
+   批量请求 `fetchOrganizations(ids)` / `fetchWorkspaces(ids)`（`GET /api/miniapp/organizations?ids=…` 与 `/workspaces?ids=…`，org / workspace 各一次，每次最多 50 个 id）覆盖全部历史条目，名称有变化时写回
    Storage 并重渲染下拉列表。
 
 > `refreshHistoryNames` 不阻塞首屏；仅在确有名称变化时才写 Storage。
@@ -160,7 +160,7 @@ function loadPersistedScanConfig() {
 用户打开小程序
       │
       ▼
-模块初始化（supabase.ts import）
+模块初始化（backend.ts import）
       │
       └─ CONFIG = { ...DEFAULT_CONFIG, ...loadPersistedScanConfig() }
              loadPersistedScanConfig 显式返回 workspaceId 键，

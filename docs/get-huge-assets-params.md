@@ -1,5 +1,7 @@
 # `get_huge_assets` 参数关系说明
 
+> 传输层：小程序通过 `utils/backend.ts` 的 `backendRpc("get_huge_assets", …)` 调用，实际请求为 `POST /api/miniapp/assets/huge`（Web 平台公开接口），参数名与返回值和原 Supabase RPC 完全一致；下文的 "RPC" 指服务端的查询函数。客户端调用见 `assets/huge.js` 的 `fetchHugeAssets()`。
+
 ## 参数定义
 
 | 参数 | 类型 | 默认值 | 含义 |
@@ -36,7 +38,7 @@ p_organization_id
 
 ```js
 // 客户端同时持有 organizationId 和 workspaceId
-supabase.rpc('get_huge_assets', {
+backendRpc("get_huge_assets", {
   p_organization_id: organizationId,
   p_workspace_id: workspaceId,
 })
@@ -51,9 +53,9 @@ supabase.rpc('get_huge_assets', {
 
 ```js
 // 客户端只有 organizationId，workspaceId 传 null
-supabase.rpc('get_huge_assets', {
+backendRpc("get_huge_assets", {
   p_organization_id: organizationId,
-  p_workspace_id: null,
+  p_workspace_id: null, // 代码中为 CONFIG.workspaceId ?? null
 })
 ```
 

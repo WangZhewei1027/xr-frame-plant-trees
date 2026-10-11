@@ -1,5 +1,7 @@
 # 素材更新以及去重管理策略
 
+> **现状说明**：本文的 `gen`（`new` / `old` / `danmaku`）三队列与 `maxNewNodeCount` / `maxOldNodeCount` / `maxDanmakuCount` 参数描述的是最初实现，现已被**容量桶**取代：`assets/registry.js` 按素材类型声明所属桶（`heavy`=model/video、`light`=text/image、`audio`、`transient`=直发弹幕），`config.js` 的 `buckets` 为每桶独立配置 `{ cap, evict }`（`farthest` 按 XZ 距离最远先踢，`fifo` 仅弹幕），另有 `minLifetimeMs` 新节点保护、`revealFirstFetch` / `revealPerFetch` 限量揭示和 `repeatCooldownMs` 重复冷却。单一 `nodeList`、全局 `assetId` 去重、本地弹幕 `assetId = null`、按距离渐进淘汰等原则不变；驱逐实现见 `assets/queue.js`。下文保留原设计的取舍说明，参数与代码位置已按当前实现更新。
+
 ## 背景与取舍
 
 `xr-start` 组件中的 `nodeList` 同时承载远程素材（model / text / image / audio）和本地即时弹幕。单队列 + 单一驱逐策略在两类场景里都存在明显问题：
@@ -90,10 +92,13 @@ while oldQueue.length > maxOldNodeCount:
 
 | 参数 | 默认值 | 作用 |
 |---|---|---|
-| `maxNewNodeCount` | 10 | 控制“本轮新增素材”可见规模 |
-| `maxOldNodeCount` | 25 | 控制“沉淀素材”规模，影响空间连续感 |
-| `maxDanmakuCount` | 8 | 控制“本地即时弹幕”规模 |
-| `maxDistanceMeters` | 50 | 服务端附近素材查询半径 |
+| `buckets.heavy.cap` | 6 | model / video 桶上限（最远先踢） |
+| `buckets.light.cap` | 20 | text / image 桶上限（最远先踢） |
+| `buckets.audio.cap` | 6 | 空间音频桶上限（最远先踢） |
+| `buckets.transient.cap` | 8 | 本地即时弹幕桶上限（FIFO） |
+| `minLifetimeMs` | 1500 | 新节点在此窗口内不参与驱逐 |
+| `revealFirstFetch` / `revealPerFetch` | 20 / 10 | 首轮 / 后续每轮最多放置的新素材数 |
+| `maxDistanceMeters` | 20 | 服务端附近素材查询半径 |
 | `distanceThreshold` | 5 | 触发重拉取的净位移阈值 |
 | `fetchCooldownMs` | 3000 | 两次拉取的最小时间间隔 |
 
@@ -115,7 +120,9 @@ while oldQueue.length > maxOldNodeCount:
 
 ## 代码位置
 
-- 配置与容量参数：../miniprogram/components/xr-start/index.js
-- 更新、去重、驱逐主逻辑：../miniprogram/components/xr-start/assets.js
-- 本地弹幕入队：../miniprogram/components/xr-start/danmaku.js
+- 配置与容量参数：../miniprogram/components/xr-start/config.js（`buckets`、`minLifetimeMs`、`reveal*`）
+- 桶归属与重复冷却声明：../miniprogram/components/xr-start/assets/registry.js
+- 更新、去重、限量揭示主逻辑：../miniprogram/components/xr-start/assets/index.js（`displayAssets`）
+- 注册、驱逐、销毁：../miniprogram/components/xr-start/assets/queue.js（`_registerNode` / `_enforceCapacity` / `_evictBucket`）
+- 本地弹幕入队：../miniprogram/components/xr-start/effects/danmaku.js
 - 拉取触发策略：./fetch-trigger-strategy.md

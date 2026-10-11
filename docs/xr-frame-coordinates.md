@@ -4,6 +4,8 @@ applyTo: "miniprogram/**/*.{js,ts,wxml}"
 
 # XR-Frame 坐标与朝向（通用速查）
 
+> **⚠️ 历史文档（xr-frame）**：正式 AR 页 `pages/ar/ar` 自 2026-10-09 起不再使用 xr-frame，已切换为 VisionKit v2 + Three.js（见 [`visionkit-three-migration.md`](visionkit-three-migration.md)）。下文仅适用于实验页 `miniprogram/labs/xr-three/xr-view/` 与参考工程 `xr-frame-demo-master/`。最危险的差异：xr-frame 相机 forward 为 **+Z**（左手系），Three 为 **−Z**（右手系，`camera.getWorldDirection()`）——不要把本文的朝向规则用于生产代码。
+
 本文件仅包含坐标系、摄像机朝向、旋转相关规则。
 粒子参数规范见同目录的 `xr-frame-particles.instructions.md`。
 

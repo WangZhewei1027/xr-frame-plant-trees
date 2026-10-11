@@ -1,5 +1,7 @@
 # 模型归一化大小渲染逻辑调查（xr-start）
 
+> **⚠️ 2026-10-09 更新**：正式 AR 页 `pages/ar/ar` 已从 xr-frame 切换为 VisionKit v2 + Three.js（见 [`visionkit-three-migration.md`](visionkit-three-migration.md)）。"最长边归一到目标尺寸再乘 `scale_multiplier`" 的思路不变，但本文原先引用的 xr-frame 机制（`calcTotalBoundBox`、`transform.scale.setValue`、`gltfComp`、`_placeHugeModel`、`HUGE_MODEL_SCALE`）已不存在，当前统一由 `assets/model.js` 的 `instantiateModel(handle, targetSize, config)` 用 `THREE.Box3().setFromObject()` 实现；下文已按当前实现更新。xr-frame 写法仅适用于 `labs/xr-three/xr-view/` 与 `xr-frame-demo-master/`（注意 xr-frame 相机 forward 为 +Z，Three 为 −Z）。
+
 ## 调查范围
 
 本次仅覆盖 `miniprogram/components/xr-start` 内与「3D 模型尺寸归一化」直接相关的路径：
@@ -16,9 +18,9 @@
 现有实现采用了统一思路：
 
 1. 加载 GLTF/GLB
-2. 计算模型总包围盒 `calcTotalBoundBox()`
+2. 计算模型总包围盒 `new THREE.Box3().setFromObject(model)`（`instantiateModel`，`assets/model.js`）
 3. 取最长边 `maxExtent = max(size.x, size.y, size.z)`
-4. 使用目标最长边（1m / 0.3m）反推等比缩放
+4. 使用目标最长边（`targetSize`：普通模型 1m / 耳机与种树 0.3m / 巨型 15m）反推等比缩放
 5. 再乘素材级倍率 `asset.config.scale_multiplier`（缺省按 `1.0` 处理）
 
 核心公式：
@@ -44,19 +46,17 @@ $$
 `scaleMultiplier` 的读取方式（当前实现）：
 
 ```js
-const scaleMultiplier =
-   asset.config && asset.config.scale_multiplier
-      ? asset.config.scale_multiplier
-      : 1.0;
+const configured = Number(config.scale_multiplier),
+  multiplier = Number.isFinite(configured) && configured > 0 ? configured : 1;
 ```
 
-说明：`config` 为 `null` / `undefined` / `{}` 时会回退到 `1.0`。
+说明：`config` 缺省、`scale_multiplier` 非数字或非正数时回退到 `1`。
 
 ## 代码调用链（何时触发）
 
 ### 普通模型
 
-1. 首次 GPS 就绪后触发拉取：`updateGPS()`
+1. GPS 与 AR 均就绪后触发首批拉取：`updateGPS()` / `handleARReady()` → `_maybeStartFirstFetch()`
    - 文件：`miniprogram/components/xr-start/gps.js`
 2. 进入素材分发：`fetchNearbyAssets()` -> `displayAssets()` -> `_placeAsset()`
    - 文件：`miniprogram/components/xr-start/assets/index.js`
@@ -65,9 +65,9 @@ const scaleMultiplier =
 
 ### 巨型模型
 
-1. 首次 GPS 就绪后触发：`fetchHugeAssets()`
-   - 文件：`miniprogram/components/xr-start/gps.js`
-2. 放置流程：`_placeHugeAssets()` -> `_placeHugeModel()`
+1. 与普通模型同一闸门触发：`_maybeStartFirstFetch()` → `fetchHugeAssets()`
+   - 文件：`miniprogram/components/xr-start/gps.js` → `assets/huge.js`
+2. 放置流程：`_placeHugeAssets()` 内 `_hugeModelCache.acquire()` -> `instantiateModel(handle, 15, asset.config)`
    - 文件：`miniprogram/components/xr-start/assets/huge.js`
 3. 每帧维护：`tickHugeModels()`
    - 文件：`miniprogram/components/xr-start/assets/huge.js`
@@ -82,17 +82,15 @@ const scaleMultiplier =
 
 关键逻辑：
 
-- `const boundBox = gltfComp.calcTotalBoundBox();`
-- `const maxExtent = Math.max(size.x, size.y, size.z);`
-- `const normalizeScale = maxExtent > 0.0001 ? 1.0 / maxExtent : 1.0;`
-- `const scaleMultiplier = ...;`
-- `const finalScale = normalizeScale * scaleMultiplier;`
-- `transform.scale.setValue(finalScale, finalScale, finalScale);`
+- `instantiateModel(handle, 1, asset.config)`（`_placeModelAsset`），内部：
+- `const bounds = new THREE.Box3().setFromObject(model), size = bounds.getSize(new THREE.Vector3());`
+- `const extent = Math.max(size.x, size.y, size.z);`
+- `model.scale.multiplyScalar((targetSize / (extent > 0.0001 ? extent : 1)) * multiplier);`
 
 说明：
 
 - 最长边先归一到 1m，再乘 `scale_multiplier`。
-- `maxExtent <= 0.0001` 时使用兜底 `1.0`，避免除零或异常放大。
+- `extent <= 0.0001` 时分母取 `1`（即直接用 `targetSize`），避免除零或异常放大。
 - 若模型无内置动画，仅附加上下跳动与旋转，不改变 scale。
 
 ### 2) 巨型模型（先归一到 1m，再放大 15 倍）
@@ -101,19 +99,16 @@ const scaleMultiplier =
 
 关键常量：
 
-- `const HUGE_MODEL_SCALE = 15;`
+- 无单独常量，`_placeHugeAssets()` 直接调用 `instantiateModel(handle, 15, asset.config)`（`targetSize = 15`）。
 
 关键逻辑：
 
-- `normalizeScale = maxExtent > 0.0001 ? 1.0 / maxExtent : 1.0`
-- `scaleMultiplier = ...`
-- `hugeScale = normalizeScale * HUGE_MODEL_SCALE * scaleMultiplier`
-- `transform.scale.setValue(hugeScale, hugeScale, hugeScale)`
+- 与普通模型同一函数：`model.scale.multiplyScalar((15 / extent) * multiplier)`，等价于 `1/maxExtent × 15 × scaleMultiplier`
 
 说明：
 
 - 尺寸归一化规则与普通模型一致。
-- 在 `HUGE_MODEL_SCALE` 基础上继续乘 `scale_multiplier`，形成可配置远景体量。
+- 在 15m 基础上继续乘 `scale_multiplier`，形成可配置远景体量。
 - 该分支还会基于 GPS 与罗盘计算放置方向/距离，但这是位置逻辑，不影响大小归一公式本身。
 
 ### 3) 音频耳机模型（目标最长边 = 0.3m）
@@ -122,36 +117,28 @@ const scaleMultiplier =
 
 关键逻辑：
 
-- `const boundBox = gltfComp.calcTotalBoundBox();`
-- `const maxExtent = Math.max(size.x, size.y, size.z);`
-- `const s = maxExtent > 0.0001 ? 0.3 / maxExtent : 0.3;`
-- `const scaleMultiplier = ...;`
-- `const finalScale = s * scaleMultiplier;`
-- `transform.scale.setValue(finalScale, finalScale, finalScale);`
+- `handle = await this._modelCache.acquire("/assets/headphone.glb")`（与普通模型共用 `ModelCache`）
+- `instantiateModel(handle, 0.3, asset.config)`
 
 说明：
 
 - 和普通模型相同算法，但目标最长边改为 `0.3m`，随后再乘 `scale_multiplier`。
-- 若耳机模型加载失败，回退为立方体占位并固定缩放 `0.15`（非归一化分支）。
+- 若耳机模型加载失败，回退为 `BoxGeometry(0.15, 0.15, 0.15)` 立方体占位（非归一化分支）。
 
 ## 非归一化分支与例外
 
 以下逻辑不是“按模型包围盒归一化”：
 
-1. `placeNode()` 调试/示例放置：固定 `scale = 0.3`
+1. `placeNode()` 点击种树：已改为 `instantiateModel(handle, 0.3)`（归一到 0.3m，不读 `scale_multiplier`），并把包围盒底部中心对齐到光标落点
    - 文件：`miniprogram/components/xr-start/index.js`
-2. 音频模型加载失败回退立方体：固定 `scale = 0.15`
+2. 音频模型加载失败回退立方体：`BoxGeometry(0.15, 0.15, 0.15)`
    - 文件：`miniprogram/components/xr-start/assets/audio.js`
-3. 图片素材按目标高度设置：`transform.scale.setValue(targetH * (imgW / imgH), targetH, 1)`
+3. 图片素材按目标高度建面片：`PlaneGeometry(0.6 * aspect, 0.6)`
    - 文件：`miniprogram/components/xr-start/assets/image.js`
 
 ## 调试与验收要点
 
-可直接看日志关键字确认归一化是否生效：
-
-- 普通模型：`[model] ... normalizeScale=... scaleMultiplier=... finalScale=...`
-- 巨型模型：`[huge] ... normalizeScale=... scaleMultiplier=... hugeScale=...`
-- 音频耳机：`[audio] 耳机模型 normalizeScale=... scaleMultiplier=... finalScale=...`
+当前实现不再输出 `[model] / [huge] / [audio] … normalizeScale=…` 这类归一化日志（历史）；加载失败会打 `[ThreeAR][asset-error]` 并抛 `asseterror` 事件，需要核对缩放时可在 `instantiateModel` 临时打印 `extent` 与 `multiplier`。
 
 快速验收建议：
 
@@ -162,6 +149,6 @@ const scaleMultiplier =
 
 ## 可优化点（可选）
 
-1. 将 `1.0`、`0.3`、`15` 提升到统一配置，避免多处硬编码。
-2. 抽一个通用函数（如 `normalizeModelScale(gltfComp, targetLongestEdge)`），减少重复实现。
+1. 将 `1`、`0.3`、`15` 提升到统一配置，避免多处硬编码（目前仍在各调用点硬编码）。
+2. ~~抽一个通用函数~~ 已实现：`instantiateModel(handle, targetSize, config)` 统一处理普通 / 巨型 / 耳机 / 种树。
 3. 为 `maxExtent <= 0.0001` 增加告警日志，便于定位损坏模型或异常包围盒。

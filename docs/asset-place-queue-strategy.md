@@ -12,8 +12,8 @@ newAssets.forEach((a) => this._placeAsset(a));
 
 | 素材类型 | 原因 |
 |---|---|
-| `text`（文本气泡）| `_placeTextAsset` 完全同步，N 个 `createElement + addChild + _buildBubbleNodes` 全部压在同一帧，JS 线程长时间被占用 |
-| `model / image / audio`（异步加载）| `loadAsset` 全部同时发起网络请求；一旦集中回调完成，所有 post-`await` 的 scene 操作扎堆进入同一个 microtask 批次 |
+| `text`（文本气泡）| `_placeTextAsset` 完全同步，N 个 `createTextAsset`（文字排版 + Canvas 生成字形纹理）+ `shadowRoot.add` 全部压在同一帧，JS 线程长时间被占用 |
+| `model / image / audio`（异步加载）| `ModelCache.acquire` / `loadTexture` / `download` 全部同时发起网络请求；一旦集中回调完成，所有 post-`await` 的 scene 操作扎堆进入同一个 microtask 批次 |
 
 结果：XR 渲染帧被 JS 阻塞，画面出现明显卡顿/掉帧。
 
@@ -27,13 +27,13 @@ newAssets.forEach((a) => this._placeAsset(a));
 
 ```
 旧（并发）:
-asset1 ─> loadAsset ─────────────> 回调 ┐
-asset2 ─> loadAsset ─────────────> 回调 ┤← 同时完成，scene 操作扎堆
-asset3 ─> loadAsset ─────────────> 回调 ┘
+asset1 ─> 加载 ─────────────> 回调 ┐
+asset2 ─> 加载 ─────────────> 回调 ┤← 同时完成，scene 操作扎堆
+asset3 ─> 加载 ─────────────> 回调 ┘
 
 新（串行）:
-asset1 ─> loadAsset ─> scene操作 ─> 等80ms ─>
-                                               asset2 ─> loadAsset ─> scene操作 ─> 等80ms ─>
+asset1 ─> 加载 ─> scene操作 ─> 等40ms ─>
+                                               asset2 ─> 加载 ─> scene操作 ─> 等40ms ─>
                                                                                               asset3 ─> ...
 ```
 
@@ -62,10 +62,12 @@ _enqueueDisplayAssets(assets) {
 ```js
 async _drainPlaceQueue() {
   this._placingBusy = true;
-  const stagger = XR_CONFIG.placeStaggerMs || 80;
+  const baseStagger = XR_CONFIG.placeStaggerMs || 40;
   while (this._placeQueue && this._placeQueue.length > 0) {
     const asset = this._placeQueue.shift();
     await this._placeAsset(asset);           // 等待 IO + scene 操作完成
+    // 模型放置触发 GPU 资源上传，至少留 120ms；其他类型用基础值
+    const stagger = asset.file_type === "model" ? Math.max(baseStagger, 120) : baseStagger;
     await new Promise((r) => setTimeout(r, stagger)); // 让渲染帧喘气
   }
   this._placingBusy = false;
@@ -78,15 +80,16 @@ async _drainPlaceQueue() {
 
 ```js
 async _placeAsset(asset) {
+  if (!this._isAssetPlacementCurrent(asset)) return; // 内容代次 / 白名单复检
   if (asset.file_type === "model")      await this._placeModelAsset(asset);
-  else if (asset.file_type === "text")        this._placeTextAsset(asset);
+  else if (asset.file_type === "text")  await this._placeTextAsset(asset);
   else if (asset.file_type === "image") await this._placeImageAsset(asset);
   else if (asset.file_type === "audio") await this._placeAudioAsset(asset);
   else if (asset.file_type === "video") await this._placeVideoAsset(asset);
 },
 ```
 
-`text` 素材本身是同步的，无需 `await`，放置后直接进入 stagger 等待。
+`text` 素材本身是同步的（`await` 非 Promise 立即完成），放置后直接进入 stagger 等待。
 
 ---
 
@@ -95,13 +98,13 @@ async _placeAsset(asset) {
 位于 `config.js`：
 
 ```js
-placeStaggerMs: 80,   // 相邻两次放置之间的空闲窗口（毫秒）
+placeStaggerMs: 40,   // 相邻两次放置之间的空闲窗口（毫秒）；模型在 _drainPlaceQueue 内提升到至少 120ms
 ```
 
 | 值 | 效果 |
 |---|---|
 | `0` | 无空闲窗口，但仍然串行——不会扎堆，适合素材很少的场景 |
-| `80`（默认）| 每个素材之间留 ~80ms 给渲染帧，约 2–3 帧（30fps）的喘息时间 |
+| `40`（默认）| 每个素材之间留 ~40ms 给渲染帧（≈2.5 帧），一批 10 个素材约 0.4s 显完；模型固定至少 120ms |
 | `150+` | 素材出现更稀疏，帧率更稳定，适合低端机型 |
 
 > 调大 `placeStaggerMs` 不影响加载速度（网络 IO 仍在后台进行），只影响 scene 操作写入渲染管线的频率。
@@ -110,12 +113,14 @@ placeStaggerMs: 80,   // 相邻两次放置之间的空闲窗口（毫秒）
 
 ## 生命周期安全
 
-组件 `detached` 时清空队列，防止已销毁的场景引用被继续操作：
+组件 `detached`、页面隐藏时经 `pauseRetrieval()` → `_clearRemoteAssets()`（`matching/index.js`）清空队列并递增内容代次，防止已销毁的场景引用被继续操作；异步放置在每个 `await` 后用 `_isAssetPlacementCurrent` 复检，旧素材不会复活：
 
 ```js
-detached() {
+_clearRemoteAssets() {
+  this._contentEpoch++;
+  this._allowedAssetIds.clear();
   this._placeQueue = [];
-  this._placingBusy = false;
-  // ... 其他清理
+  this._pendingDisplayAssets = [];
+  // ... 销毁 nodeList 全部节点
 }
 ```
