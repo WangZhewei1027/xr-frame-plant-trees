@@ -5,6 +5,7 @@ const textMethods = require("./text");
 const modelMethods = require("./model");
 const imageMethods = require("./image");
 const videoMethods = require("./video");
+const sceneMethods = require("./scene");
 const matchLog = require("../matching/log");
 
 /**
@@ -22,6 +23,7 @@ module.exports = function (XR_CONFIG) {
     ...imageMethods,
     ...audioMethods,
     ...videoMethods,
+    ...sceneMethods,
 
     async fetchNearbyAssets() {
       if (this._disposed || this._retrievalPaused) return;
@@ -48,7 +50,8 @@ module.exports = function (XR_CONFIG) {
                   a.file_type === "model" ||
                   a.file_type === "image" ||
                   a.file_type === "audio" ||
-                  a.file_type === "video") &&
+                  a.file_type === "video" ||
+                  a.file_type === "scene") &&
                 !a.is_huge,
             ),
           );
@@ -319,6 +322,7 @@ module.exports = function (XR_CONFIG) {
       else if (asset.file_type === "image") await this._placeImageAsset(asset);
       else if (asset.file_type === "audio") await this._placeAudioAsset(asset);
       else if (asset.file_type === "video") await this._placeVideoAsset(asset);
+      else if (asset.file_type === "scene") await this._placeSceneAsset(asset);
     },
   };
 };

@@ -1,0 +1,10 @@
+page { background:#f6f7f8; color:#1f2937; }
+.page { padding:16px; }
+.title { font-size:20px; font-weight:600; margin-bottom:8px; }
+.hint { font-size:12px; color:#53606e; margin:8px 0; line-height:1.6; }
+input { font-size:12px; padding:10px; background:white; border:1px solid #d3d7dc; border-radius:4px; margin:8px 0; }
+.status { font-size:14px; margin:12px 0; font-weight:600; }
+canvas { background:#18212b; border-radius:6px; }
+.controls { display:flex; gap:8px; margin:10px 0; }
+.controls button { margin:0; }
+.report { white-space:pre-wrap; font-size:12px; line-height:1.8; background:white; padding:10px; border-radius:4px; }

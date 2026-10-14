@@ -8,6 +8,7 @@ import { resolveBackendBaseUrl } from "./backend-environment";
 // 地址配置与真机开发说明见 backend-environment.ts 和 docs/local-development.md。
 const API_BASE_URL = resolveBackendBaseUrl(
   wx.getAccountInfoSync().miniProgram.envVersion,
+  wx.getDeviceInfo?.().platform,
 );
 const API_PREFIX = "/api/miniapp";
 
@@ -224,6 +225,7 @@ export function fetchWorkspaces(
 /** 原 Supabase RPC 名 → 新接口路径；请求体与返回值和原 RPC 完全一致 */
 const RPC_PATHS = {
   get_nearby_assets: "/assets/nearby",
+  get_scene_asset: "/assets/scene",
   get_huge_assets: "/assets/huge",
   get_shop_assets: "/shops",
   upload_text_asset: "/text-assets",

@@ -76,6 +76,9 @@ const context = vm.createContext({
 });
 const modules = new Map();
 function load(file) {
+  if (file.endsWith("/backend-development-local")) {
+    return { apiBaseUrl: "http://192.168.20.5:3000" };
+  }
   if (!path.extname(file)) file += fs.existsSync(file + ".js") ? ".js" : ".ts";
   file = path.resolve(file);
   if (modules.has(file)) return modules.get(file).exports;
@@ -644,7 +647,8 @@ async function main() {
   host._nextRecognitionAt = 0;
   host.resetCaptureTiming(0);
   wx.uploadFile = (options) => {
-    assert.ok(options.url.startsWith("http://192.168.1.7:3000/api/miniapp/anchors/recognize?"));
+    const { DEVELOPMENT_API_BASE_URL } = load(path.join(root, "utils/backend-environment.ts"));
+    assert.ok(options.url.startsWith(`${DEVELOPMENT_API_BASE_URL}/api/miniapp/anchors/recognize?`));
     Promise.resolve().then(() =>
       options.success({
         statusCode: 200,

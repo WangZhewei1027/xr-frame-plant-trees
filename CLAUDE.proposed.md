@@ -38,6 +38,7 @@ A WeChat Mini Program that renders a location-based AR experience. Users scan a 
 
 Sub-modules:
 - `assets/` — remote asset fetch + placement. `index.js` fetches via `backendRpc("get_nearby_assets")` and dispatches by `file_type` to `text.js` / `model.js` / `image.js` / `audio.js` / `video.js`. `queue.js` is the **generic capacity engine**; `registry.js` is the **type→descriptor table** that drives it; `huge.js` handles `is_huge` distant landmark models (`get_huge_assets`).
+- `assets/scene.js` + `lib/scene-runtime/composition.js` — `scene` is an ordinary asset type; current composition JSON/resources come from `/api/miniapp/assets/scene`. Uses the same nodeList, epoch, tick/tap and disposal, with a one-scene capacity bucket. See `docs/scene-asset.md`; no workspace-mode or publication system.
 - `matching/` — 匹配 mode: `capture.js` exports a JPEG from the current VK frame, `index.js` uploads it to `/api/miniapp/anchors/recognize` (`wx.uploadFile`, `RECOGNIZE_API` from `backend.ts`), locks onto the matched anchor's assets and restarts after 1.5 m net displacement; `config.js` holds intervals/limits, `log.js` the `[AnchorMatch]` logger.
 - `effects/` — `danmaku.js` (flying chat-bubble animation for just-sent text), `repulsion.js` (per-frame mutual push-apart of all placed nodes), `confetti.js` (org-gated random procedural particle bursts).
 - `gps.js` (location watch + first-fetch gate), `navigation.js` (stubbed — only receives state), `config.js` (`XR_CONFIG`).

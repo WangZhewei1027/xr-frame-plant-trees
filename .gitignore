@@ -12,3 +12,8 @@ $RECYCLE.BIN/
 
 # Node.js
 node_modules/
+
+# Computer-specific development address, refreshed by DevTools hooks.
+.miniapp-dev.local.json
+miniprogram/utils/backend-development-local.js
+miniprogram/utils/backend-development-local.js.*.tmp

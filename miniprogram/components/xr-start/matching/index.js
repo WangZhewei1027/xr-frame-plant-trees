@@ -559,7 +559,7 @@ module.exports = {
       const assets = result.assets.filter(
         (a) =>
           a &&
-          ["text", "image", "model", "audio", "video"].includes(a.file_type),
+          ["text", "image", "model", "audio", "video", "scene"].includes(a.file_type),
       );
       const incomingIds = new Set(assets.map((a) => a.id));
       this._allowedAssetIds = incomingIds;

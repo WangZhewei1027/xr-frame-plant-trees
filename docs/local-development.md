@@ -1,10 +1,11 @@
 # 小程序与 Web 共用本地后端
 
-小程序通过 `wx.getAccountInfoSync().miniProgram.envVersion` 选择后端，在模块初始化时固定。配置入口：`miniprogram/utils/backend-environment.ts`。
+小程序通过 `wx.getAccountInfoSync().miniProgram.envVersion` 选择后端，在模块初始化时固定。环境规则入口：`miniprogram/utils/backend-environment.ts`；真机开发 IP 由电脑在编译／预览前自动检测。
 
 | 小程序环境 | 后端地址 |
 |---|---|
-| develop：开发者工具、预览／开发版 | `http://192.168.1.7:3000` |
+| develop：微信开发者工具模拟器 | `http://127.0.0.1:3000`（不依赖 Wi-Fi IP） |
+| develop：真机预览／开发版 | `http://<电脑当前局域网 IP>:3000` |
 | trial：体验版 | `https://139.196.189.102` |
 | release：正式版 | `https://139.196.189.102`（保留原配置） |
 
@@ -14,10 +15,28 @@
 
 1. 启动 Web 使用的本地数据库。在相邻 `sanlinlaojie` 仓库确认 `.env.local` 的 `DATABASE_URL`；当前指向本机 `localhost:55432` 的 `sanlin` 数据库。
 2. 在 Web 仓库运行 `npm run dev -- --hostname 0.0.0.0 --port 3000`。若 3000 已有开发服务，不要另起一个自动换端口的实例。
-3. 在微信开发者工具重新编译。保留“详情 → 本地设置 → 不校验合法域名”；当前 `project.private.config.json` 已设置 `urlCheck: false`。
+3. 首次拉取代码后在小程序仓库执行 `npm install`，自动生成本机地址文件。在微信开发者工具“设置 → 项目设置 → 本地设置”勾选“启用自定义处理命令”（本机已启用），确认三个预处理命令均为 `sh scripts/sync-dev-backend.sh`，然后重新编译。保留“不校验合法域名”；当前 `project.private.config.json` 已设置 `urlCheck: false`。
 4. 真机预览使用开发版，手机与电脑连接同一可互访的 Wi-Fi，打开小程序调试，并允许电脑防火墙的 3000 端口访问。VisionKit AR 仍需真机验证。
 
-`192.168.1.7` 是本次配置时电脑的局域网地址，换网络或电脑后修改 `DEVELOPMENT_API_BASE_URL`，再重新编译／预览。只用模拟器时可改成 `http://127.0.0.1:3000`；真机上的 localhost 指手机自身，不能用于连接电脑。
+### 真机开发地址自动更新
+
+`project.config.json` 已配置 `beforeCompile`、`beforePreview`、`beforeUpload` 执行 `sh scripts/sync-dev-backend.sh`。启动脚本从 PATH、常见 Homebrew 安装位置或 nvm 默认版本查找 Node.js，解决从桌面启动开发者工具时缺少终端 PATH 的问题，再运行 `scripts/sync-dev-backend.cjs`。当前开发者工具另有自身保存的“启用自定义处理命令”开关，单改文件里的 `setting.scriptsEnable` 不足以启用，新电脑需要在界面勾选一次。
+
+脚本在电脑上枚举网卡，优先使用默认路由对应的局域网 IPv4，排除 VPN、Docker 等虚拟网卡；默认路由不可用时，仅在剩余地址唯一时自动选择。输出 `miniprogram/utils/backend-development-local.js`，运行时再按版本选用该地址。已在本机开发者工具实际编译验证：无需终端预先执行命令，编译钩子成功重新生成地址文件。
+
+**换 Wi-Fi 后，直接重新编译／预览并让手机扫码新包，无需手改 IP。** 已在手机运行的旧包不会自动发现电脑新地址。Web 仍需监听 `0.0.0.0:3000`，手机与电脑需要网络互通。
+
+地址文件和可选覆盖文件均已加入 `.gitignore`。地址没变时不重写文件，避免重复触发热重载。断网或网卡选择有歧义时会清空旧地址并提示；此时模拟器、体验版和正式版仍可正常选择后端，真机开发会明确报错，不会沿用旧地址或回退线上。当前启动脚本用于 macOS/Linux；Windows 可将三个预处理命令改成 `node scripts/sync-dev-backend.cjs`，并确保 Node.js 在开发者工具 PATH 中。
+
+多网卡／VPN 环境可在小程序仓库根目录创建 `.miniapp-dev.local.json`，指定固定网卡，之后该网卡的 IP 仍会自动更新：
+
+```json
+{ "interface": "en0" }
+```
+
+特殊情况也可以写 `{ "host": "192.168.1.8" }` 固定局域网 IP（`host` 优先）。通常无需创建这个文件。需要排查检测结果时运行 `npm run dev:sync`，控制台会输出选中的网卡和地址。
+
+模拟器根据 `wx.getDeviceInfo().platform === "devtools"` 自动使用 `127.0.0.1`；真机上的 localhost 指手机自身，不能用于连接电脑。体验版和正式版始终按环境选择线上配置。所有回归使用固定测试地址，不再依赖开发者当前 IP。
 
 选择本地 Web 数据库里存在的组织与工作区，可使用本地管理端生成的入口参数。原有默认 ID 和扫码历史保持不变；若本地没有对应记录，改用本地 ID，不会自动复制线上数据。普通素材的下载仍使用本地数据库记录的 file_url，识别模型也仍按 Web 的服务端配置运行。
 
@@ -25,4 +44,37 @@
 
 `ONLINE_API_BASE_URL` 保留原服务器 IP。体验版／正式版不会使用开发地址。现有部署说明指出 IP 无法配置成微信合法服务器域名；体验版仍需原调试方式，正式发布前需按原计划完成备案、改回域名并配置白名单。本次环境切换不改变这项既有限制。
 
-回归：`npm run test:backend` 验证三个环境的全部数据 API、识别地址及失败不回退线上；`npm test` 运行项目全部本地回归。测试使用微信 API 替身，真机网络与 AR 需另行验证。
+回归：`npm run test:backend` 验证网络变化、网卡筛选、覆盖、离线清理，以及各环境的全部数据 API、识别地址和失败不回退线上；`npm test` 运行项目全部本地回归。测试使用微信 API 替身，真机网络与 AR 需另行验证。
+
+## Web → 小程序的场景自动联调
+
+日常场景调试使用 `labs/xr-three/scene-preview`，不启动 VisionKit、不申请相机或定位。它是微信开发者工具内运行的小程序页面，直接使用正式代码的 `backendRpc`、`ModelCache`、GLB 资源加载器和 `createCompositionPlayer`，不是 Web 编辑器的另一个预览。
+
+1. 在本地 Web 创建 scene 素材，通过 `/manage/scenes/[id]` 编排模型与关键帧并保存。
+2. 在本仓库执行：
+
+   ```sh
+   npm run scene:preview -- <sceneAssetId> <workspaceId>
+   ```
+
+   命令先通过 `127.0.0.1:3000` 检查真实场景接口，再新增或更新私有编译条件「Scene 本地全流程验证」，保留其他条件。该命令只准备入口，不声称已经完成 GPU 验证。
+3. 在开发者工具选择该编译模式并完整编译。页面自动读取最新保存内容、加载 GLB、执行确定性检查，随后播放场景。修改小程序 JS 后应完整编译；热重载可能保留已经销毁的页面状态。
+4. 检查页面 `PASS`、实际画面、暂停／继续、重播、清场及重新加载。后续 Web 保存后点击“加载并自动验证”即可，无需再扫描真机。
+
+自动检查覆盖：实例数量、独立克隆、动画片段存在性、时间推进、暂停/继续、保存关键帧的精确值、延迟开始、整场结束/循环、重播、节点清空和模型引用释放；通过后重载并检查实际 WebGL2 渲染提交。没有 GLB 内置动画的素材不会宣称已验证该片段，相关通用回归由 `npm run test:scene-preview` 的真实二进制 GLB fixture 覆盖。`npm test` 包含此回归。
+
+该页面仅允许 `develop` 环境；体验版/正式版不初始化 GPU 或请求场景。隐藏/退出会停止 RAF、使在途加载失效并释放实例。素材 URL 仍按数据库返回，可能从 OSS 下载；数据库始终是本机开发库。相机追踪、平面检测、GPS/识别触发和真机内存/性能不在此页的验收范围。
+
+### 已完成的本机联调（2026-10-14）
+
+- 通过 Web 界面创建并保存「本地联调 · 双模型动画 1014」，重新打开确认保存结果；场景包含同一 GLB 的两个独立实例、位移与旋转关键帧，总时长 6 秒。
+- 场景：`d6fe703f-5b43-41a7-b25e-53ea690b2d8d`；工作区：`02212116-256b-4b60-9e0c-a5e089862232`。
+- 编辑入口：<http://localhost:3000/manage/scenes/d6fe703f-5b43-41a7-b25e-53ea690b2d8d>。
+- 微信开发者工具完整编译后显示两个模型，21 项检查通过，WebGL2 实际提交 248 个三角形；另外通过界面验证暂停、重播、清场及重新加载。
+- `npm test` 全部通过，包括真实 GLB fixture 播放、循环、延迟片段和预览页环境隔离回归。本次实际场景的 GLB 不含内置动画，使用的是 Web 编辑器保存的变换关键帧。
+
+复用此场景入口：
+
+```sh
+npm run scene:preview -- d6fe703f-5b43-41a7-b25e-53ea690b2d8d 02212116-256b-4b60-9e0c-a5e089862232
+```

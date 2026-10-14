@@ -2,6 +2,7 @@
   "description": "项目私有配置文件。此文件中的内容将覆盖 project.config.json 中的相同字段。项目的改动优先同步到此文件中。详见文档：https://developers.weixin.qq.com/miniprogram/dev/devtools/projectconfig.html",
   "projectname": "xr-frame-plant-trees",
   "setting": {
+    "scriptsEnable": true,
     "compileHotReLoad": true,
     "urlCheck": false,
     "coverView": false,
@@ -20,5 +21,23 @@
     "ignoreDevUnusedFiles": true
   },
   "libVersion": "3.17.4",
-  "condition": {}
+  "condition": {
+    "miniprogram": {
+      "list": [
+        {
+          "name": "pages/index/index",
+          "pathName": "pages/index/index",
+          "query": "",
+          "scene": null,
+          "launchMode": "default"
+        },
+        {
+          "name": "Scene 本地全流程验证",
+          "pathName": "labs/xr-three/scene-preview",
+          "query": "assetId=d6fe703f-5b43-41a7-b25e-53ea690b2d8d&workspaceId=02212116-256b-4b60-9e0c-a5e089862232",
+          "scene": null
+        }
+      ]
+    }
+  }
 }

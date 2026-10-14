@@ -16,6 +16,7 @@ const XR_CONFIG = {
   //                 内容随移动平滑新旧交替，不会因视线晃动闪进闪出。
   //   - 'fifo'    ：注册顺序最旧的先踢（仅短命弹幕用）。
   buckets: {
+    scene: { cap: 1, evict: "farthest" }, // One composition, up to 24 instances.
     heavy: { cap: 6, evict: "farthest" },
     light: { cap: 20, evict: "farthest" },
     audio: { cap: 6, evict: "farthest" },

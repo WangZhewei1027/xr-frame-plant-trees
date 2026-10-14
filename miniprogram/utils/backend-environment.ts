@@ -1,14 +1,19 @@
-// 开发者工具与同一 Wi-Fi 下的真机共用本机 Web 后端。
-// 换电脑或网络后更新此地址；只用模拟器时也可设为 http://127.0.0.1:3000。
-export const DEVELOPMENT_API_BASE_URL = "http://192.168.1.7:3000";
+import { apiBaseUrl } from "./backend-development-local";
+
+// 电脑在编译／预览前自动生成；本机地址不提交到 Git。
+export const DEVELOPMENT_API_BASE_URL = apiBaseUrl;
 
 // 保留现有线上配置：域名备案完成后再切换为 https://spatialmemory.online。
 // 当前服务器 IP 的微信调试限制见 docs/local-development.md。
 export const ONLINE_API_BASE_URL = "https://139.196.189.102";
 
-export function resolveBackendBaseUrl(envVersion: string | undefined): string {
+export function resolveBackendBaseUrl(envVersion: string | undefined, platform?: string): string {
   switch (envVersion) {
     case "develop":
+      if (platform === "devtools") return "http://127.0.0.1:3000";
+      if (!DEVELOPMENT_API_BASE_URL) {
+        throw new Error("未检测到电脑局域网地址；连接 Wi-Fi 后重新编译/预览，或运行 npm run dev:sync");
+      }
       return DEVELOPMENT_API_BASE_URL;
     case "trial":
     case "release":

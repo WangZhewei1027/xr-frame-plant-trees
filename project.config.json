@@ -2,7 +2,13 @@
   "description": "项目配置文件",
   "miniprogramRoot": "miniprogram/",
   "compileType": "miniprogram",
+  "scripts": {
+    "beforeCompile": "sh scripts/sync-dev-backend.sh",
+    "beforePreview": "sh scripts/sync-dev-backend.sh",
+    "beforeUpload": "sh scripts/sync-dev-backend.sh"
+  },
   "setting": {
+    "scriptsEnable": true,
     "useCompilerPlugins": [
       "typescript"
     ],

@@ -2,7 +2,7 @@
 
 当前识别链路为：小程序上传 JPEG 和 GPS → 所选 Web 后端 `POST /api/miniapp/anchors/recognize?workspace_id=…` → GPS 候选与参考特征查询 → 按服务端配置调用 SAGE 推理 → 返回匹配点及其关联素材。管理端继续负责匹配点、参考图及关联素材管理。请求/响应协议与原 Supabase Edge Function 一致（`X-Recognition-Request-Id` 回显、`data.request_id`、`diagnostics`），不再需要 `x-region` 头。所有数据接口见 `miniprogram/utils/backend.ts` 与 Web 仓库的 `docs/miniapp-api.md`。
 
-> 2026-10-11 起，develop 使用本地 Web `http://192.168.1.7:3000`，trial／release 保留 `https://139.196.189.102`。地址集中在 `utils/backend-environment.ts`，连接步骤见[本地开发](local-development.md)。线上 IP 是等待 ICP 备案期间的原有临时配置；备案通过后修改 `ONLINE_API_BASE_URL` 并配置合法域名。开发者工具需“不校验合法域名”，真机开发需“打开调试”。
+> develop 使用本地 Web：模拟器连接 `http://127.0.0.1:3000`，真机地址由电脑在编译／预览前自动检测；trial／release 保留 `https://139.196.189.102`。环境规则集中在 `utils/backend-environment.ts`，连接步骤见[本地开发](local-development.md)。线上 IP 是等待 ICP 备案期间的原有临时配置；备案通过后修改 `ONLINE_API_BASE_URL` 并配置合法域名。开发者工具需“不校验合法域名”，真机开发需“打开调试”。
 
 ## 当前渲染与取图
 

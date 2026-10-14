@@ -1019,7 +1019,7 @@ test("old GPS RPC result is discarded after switching", async () => {
     "./text": {},
     "./model": {},
     "./image": {},
-    "./video": {},
+    "./video": {}, "./scene": {},
   })({});
   let rendered = false;
   const x = {
@@ -1041,7 +1041,7 @@ function realAssetMethods() {
   const noop = () => ({});
   return load(componentPath + "assets/index.js", {
     "../../../utils/backend": { CONFIG: {} },
-    "./queue": noop, "./audio": noop, "./text": {}, "./model": {}, "./image": {}, "./video": {},
+    "./queue": noop, "./audio": noop, "./text": {}, "./model": {}, "./image": {}, "./video": {}, "./scene": {},
   })(require(path.join(root, componentPath, "config.js")));
 }
 

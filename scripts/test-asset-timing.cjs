@@ -20,7 +20,7 @@ function harness() {
   const dependencies = {
     "../../../utils/backend": { CONFIG: {} },
     "./queue": () => ({}), "./audio": () => ({}),
-    "./text": {}, "./model": {}, "./image": {}, "./video": {},
+    "./text": {}, "./model": {}, "./image": {}, "./video": {}, "./scene": {},
     "../matching/log": (event, fields, level, requestId) => logs.push({ event, fields, level, requestId }),
   };
   vm.runInNewContext(fs.readFileSync(filename, "utf8"), {

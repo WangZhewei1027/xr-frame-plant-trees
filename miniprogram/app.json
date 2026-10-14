@@ -6,7 +6,7 @@
   "subpackages": [
     {
       "root": "labs/xr-three",
-      "pages": ["index", "bridge"]
+      "pages": ["index", "bridge", "scene-preview"]
     }
   ],
   "window": {
