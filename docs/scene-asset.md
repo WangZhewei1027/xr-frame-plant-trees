@@ -16,3 +16,5 @@
 - 仅作场景资源的模型不设置独立展示位置；有 GPS 或匹配关联的模型仍按普通素材独立展示。
 
 `npm test` 包含 `scripts/test-scene-asset.cjs`，使用实际 Three bundle + 原生 API 替身。真机图像、骨骼动画、内存和帧率仍需 iOS/Android 验证。
+
+从 Web 创建场景到小程序自动检查、画面验证的完整流程，见 [Web → 小程序场景自动联调](scene-auto-debug.md)。后端地址和 IP 自动更新配置见 [本地开发环境](local-development.md)。
