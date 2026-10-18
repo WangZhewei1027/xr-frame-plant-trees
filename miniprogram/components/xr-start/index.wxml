@@ -1,6 +1,6 @@
 <view class="ar-renderer">
   <canvas id="ar-canvas" type="webgl2" class="ar-canvas" bindtouchend="onCanvasTap" bindwebglcontextlost="onContextLost" bindwebglcontextrestored="onContextRestored" />
-  <view wx:if="{{!arReady}}" class="ar-message">
+  <view wx:if="{{!arReady && !sceneId}}" class="ar-message">
     <text>{{renderError || renderStatus}}</text>
     <button wx:if="{{renderError && canRetry}}" size="mini" bindtap="retryAR">重新启动 AR</button>
   </view>

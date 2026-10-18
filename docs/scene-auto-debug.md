@@ -8,9 +8,9 @@
 
 ```mermaid
 flowchart LR
-  Editor[Web 场景编辑器] -->|保存 scene asset| API[本地 Web 后端 :3000]
+  Editor[Web 场景编辑器] -->|保存 Scene| API[本地 Web 后端 :3000]
   API --> DB[(本地 PostgreSQL :55432)]
-  Page[小程序 scene-preview 页面] -->|POST /api/miniapp/assets/scene| API
+  Page[小程序 scene-preview 页面] -->|POST /api/miniapp/scenes/preview| API
   API -->|场景 JSON 与模型 URL| Page
   Models[GLB 素材：数据库记录的 URL] -->|下载与解析| Page
   Page --> Player[实际小程序场景播放器]
@@ -19,10 +19,10 @@ flowchart LR
   Render --> Controls[播放画面与暂停、重播、清场]
 ```
 
-- scene 是普通素材，编排 JSON 保存在 `asset.text_content`；模型作为独立 asset，被场景按 ID 引用。
-- 场景接口按当前数据解析模型 URL；使用与场景同一工作空间的模型。协议与正式 AR 接入见 [Scene 素材播放](scene-asset.md)。
+- Scene 是团队场景，编排 JSON 保存在 `scene.document`；模型作为团队基础 Asset，被场景按 ID 引用。保存直接生效，不需要发布。
+- 场景接口按当前数据解析模型 URL；使用与场景同一团队的模型。协议与正式 AR 接入见 [Scene 素材播放](scene-asset.md)。
 - 小程序通过 HTTP 接口访问后端，不直接连接数据库。素材可能仍从 OSS 下载；使用本地数据库不代表所有媒体都已离线。
-- 联调页路径为 `labs/xr-three/scene-preview`。它使用模拟相机，跳过 VisionKit；复用正式代码中的 `backendRpc`、`ModelCache` 和 `createCompositionPlayer`。
+- 联调页路径为 `labs/xr-three/scene-preview`。它使用模拟相机，跳过 VisionKit；复用正式代码中的 `fetchScenePreview`、`ModelCache` 和 `createCompositionPlayer`。
 
 ## 2. 首次准备环境
 
@@ -95,7 +95,7 @@ wechatide -c Codex check_wechatide_status --skill-version 0.3.9
 
 ### 第一步：在 Web 创建、编排并保存
 
-打开本地 `/manage`，选择本地库中的工作空间，创建 scene 素材并进入 `/manage/scenes/<sceneAssetId>`。
+打开本地 `/manage`，选择本地库中的团队，在 Scene 库创建场景并进入 `/manage/scenes/<sceneId>`。
 
 建议首个验收场景包含同一 GLB 的两个实例，一段位移动画和一段旋转动画，总时长 6 秒。这样能同时验证资源复用、实例独立性和关键帧传递。若需要验证 GLB 内置动画，应另选确实包含动画片段的模型，并配置 clip 和开始时间。
 
@@ -105,30 +105,30 @@ wechatide -c Codex check_wechatide_status --skill-version 0.3.9
 
 | 参数 | 含义与获取方式 |
 |---|---|
-| `sceneAssetId` | 场景素材 ID，取自编辑器 URL 的最后一段 |
-| `workspaceId` | 创建场景时所选工作空间 ID，可从创建素材的请求地址 `/api/workspaces/<workspaceId>/assets` 中读取 |
+| `sceneId` | 场景 ID，取自编辑器 URL 的最后一段 |
+| `organizationId` | 场景所属团队 ID，可从 `/api/organizations/<organizationId>/scenes` 请求读取 |
 
-两个 ID 必须来自当前本地库，且场景属于该工作空间。不要沿用线上扫码历史里的 ID 来猜测本地记录。
+两个 ID 必须来自当前本地库，且场景属于该团队。不要沿用线上扫码历史里的 ID 来猜测本地记录。
 
 ### 第二步：准备小程序入口
 
 在小程序仓库执行，替换尖括号内的参数：
 
 ```sh
-npm run scene:preview -- <sceneAssetId> <workspaceId>
+npm run scene:preview -- <sceneId> <organizationId>
 ```
 
 命令会依次：
 
 1. 通过 npm 的 `prescene:preview` 同步本机开发 IP。
-2. 请求 `http://127.0.0.1:3000/api/miniapp/assets/scene`，检查 HTTP 返回、场景 ID 和非空实例，接口超时为 15 秒。
+2. 请求 `http://127.0.0.1:3000/api/miniapp/scenes/preview`，检查 HTTP 返回、场景 ID 和非空实例，接口超时为 15 秒。
 3. 在 `project.private.config.json` 新增或更新「Scene 本地全流程验证」编译条件，保留其他条件。
 
 生成的启动参数为：
 
 ```text
 路径：labs/xr-three/scene-preview
-query：assetId=<sceneAssetId>&workspaceId=<workspaceId>
+query：sceneId=<sceneId>&organizationId=<organizationId>
 ```
 
 命令成功说明本地接口和入口已就绪。它不会启动开发者工具、操控 Web 编辑器，也不会独立完成 GPU 或画面验收。
@@ -214,7 +214,7 @@ wechatide -c Codex automation_runtime_info --project "$MINIAPP_PROJECT" --action
 ```sh
 wechatide -c Codex simulator_open_page --project "$MINIAPP_PROJECT" \
   --page labs/xr-three/scene-preview \
-  --query 'assetId=<sceneAssetId>&workspaceId=<workspaceId>'
+  --query 'sceneId=<sceneId>&organizationId=<organizationId>'
 ```
 
 `simulator_open_page`／`simulator_refresh` 成功只表示触发动作。随后核对当前页和 query，读取最新页面状态、逐项报告与日志，确认本轮场景真实运行：

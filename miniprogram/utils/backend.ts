@@ -222,7 +222,7 @@ export function fetchWorkspaces(
   return request(`/workspaces?ids=${encodeURIComponent(ids.join(","))}`, "GET");
 }
 
-/** 原 Supabase RPC 名 → 新接口路径；请求体与返回值和原 RPC 完全一致 */
+/** Public playback endpoints: response ids identify placements, not source assets. */
 const RPC_PATHS = {
   get_nearby_assets: "/assets/nearby",
   get_scene_asset: "/assets/scene",
@@ -233,10 +233,15 @@ const RPC_PATHS = {
 
 export type RpcName = keyof typeof RPC_PATHS;
 
-/** 调用原先通过 RPC 暴露的数据库函数（参数名不变） */
+/** Request public map content. Team and collection scopes are checked by the backend. */
 export function backendRpc<T = any>(
   fnName: RpcName,
   data: Record<string, any>,
 ): Promise<ApiResponse<T>> {
   return request<T>(RPC_PATHS[fnName], "POST", data);
+}
+
+/** Direct saved-scene preview. It never changes the selected map collection. */
+export function fetchScenePreview(sceneId: string, organizationId: string): Promise<ApiResponse<any>> {
+  return request("/scenes/preview", "POST", { scene_id: sceneId, organization_id: organizationId });
 }

@@ -1,16 +1,16 @@
 const { THREE, probeWebGL2, createCanvasFacade } = require("../../lib/three-runtime/runtime");
 const { ModelCache, disposeTree } = require("../../lib/three-runtime/resources");
 const { createCompositionPlayer } = require("../../lib/scene-runtime/composition");
-const { backendRpc } = require("../../utils/backend");
+const { fetchScenePreview } = require("../../utils/backend");
 const { verifyScenePlayer } = require("./scene-checks");
 
 Page({
-  data: { enabled: false, assetId: "", workspaceId: "", busy: false, loaded: false, status: "初始化…", report: "", playback: "" },
+  data: { enabled: false, sceneId: "", organizationId: "", busy: false, loaded: false, status: "初始化…", report: "", playback: "" },
   onLoad(options) {
     this._generation = 0;
     this._active = true;
     this._enabled = wx.getAccountInfoSync().miniProgram.envVersion === "develop";
-    this.setData({ enabled: this._enabled, assetId: options.assetId || "", workspaceId: options.workspaceId || "",
+    this.setData({ enabled: this._enabled, sceneId: options.sceneId || "", organizationId: options.organizationId || "",
       status: this._enabled ? "等待 WebGL2" : "此页面仅允许开发版使用" });
   },
   onReady() {
@@ -37,27 +37,27 @@ Page({
         this._cache = new ModelCache(canvas);
         this.setData({ status: `Three.js r${THREE.REVISION} 就绪` });
         this.startFrames();
-        if (this.data.assetId && this.data.workspaceId) this.loadScene();
+        if (this.data.sceneId && this.data.organizationId) this.loadScene();
       } catch (error) { this.fail(error); }
     });
   },
-  onAssetInput(event) { this.setData({ assetId: event.detail.value.trim() }); },
-  onWorkspaceInput(event) { this.setData({ workspaceId: event.detail.value.trim() }); },
+  onSceneInput(event) { this.setData({ sceneId: event.detail.value.trim() }); },
+  onOrganizationInput(event) { this.setData({ organizationId: event.detail.value.trim() }); },
   async loadScene() {
     if (!this._enabled || !this._cache || this.data.busy || !this._active) return;
-    const { assetId, workspaceId } = this.data;
-    if (![assetId, workspaceId].every((id) => /^[0-9a-f-]{36}$/i.test(id))) {
+    const { sceneId, organizationId } = this.data;
+    if (![sceneId, organizationId].every((id) => /^[0-9a-f-]{36}$/i.test(id))) {
       this.setData({ status: "请填写场景和工作空间 UUID" }); return;
     }
     this.clearScene();
     const generation = this._generation;
     this.setData({ busy: true, status: "读取本地后端并加载真实 GLB…", report: "" });
     try {
-      const response = await backendRpc("get_scene_asset", { asset_id: assetId, p_workspace_id: workspaceId });
+      const response = await fetchScenePreview(sceneId, organizationId);
       if (this._dead || generation !== this._generation) return;
       if (response.statusCode !== 200) throw new Error(response.data?.error || "场景接口失败");
       const manifest = response.data;
-      if (manifest.assetId !== assetId || !manifest.content?.instances?.length) throw new Error("场景为空或返回了错误的素材");
+      if (manifest.assetId !== sceneId || !manifest.content?.instances?.length) throw new Error("场景为空或返回了错误的素材");
       const player = this._player = createCompositionPlayer(manifest, { modelCache: this._cache });
       await player.load();
       if (this._dead || generation !== this._generation) { player.dispose(); return; }
@@ -80,7 +80,7 @@ Page({
       checks.push(`真实 WebGL2 渲染：${this._renderer.info.render.triangles} 个三角形`);
       preview.play();
       this.setData({ busy: false, loaded: true, status: `PASS · ${checks.length} 项检查通过`, report: checks.map((name) => `✓ ${name}`).join("\n") });
-      console.log("[ScenePreview] PASS", { assetId, workspaceId, checks, schemaVersion: manifest.schemaVersion });
+      console.log("[ScenePreview] PASS", { sceneId, organizationId, checks, schemaVersion: manifest.schemaVersion });
     } catch (error) { if (!this._dead && generation === this._generation) { this.clearScene(); this.fail(error); } }
   },
   startFrames() {

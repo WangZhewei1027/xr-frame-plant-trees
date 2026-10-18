@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "场景预览",
+  "usingComponents": {
+    "xr-start": "../../components/xr-start/index"
+  },
+  "disableScroll": true
+}

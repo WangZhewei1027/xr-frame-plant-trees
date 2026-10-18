@@ -245,6 +245,7 @@ module.exports = {
   },
 
   pauseRetrieval() {
+    this._cancelScenePreview?.();
     matchLog("暂停识别", { mode: this.retrievalMode });
     this._retrievalPaused = true;
     this._cancelRetrieval();
@@ -255,6 +256,7 @@ module.exports = {
     if (!this._retrievalPaused || this._disposed) return;
     matchLog("恢复识别", { mode: this.retrievalMode, arReady: !!this._arReady });
     this._retrievalPaused = false;
+    if (this._scenePreviewMode) { if (this._arReady) this._beginScenePreview(); return; }
     this._maybeStartConfetti?.();
     this.resetCaptureTiming();
     if (this._arReady) {

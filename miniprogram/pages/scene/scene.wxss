@@ -1,0 +1,4 @@
+.scene-preview { position: fixed; inset: 0; width: 100%; height: 100%; display: flex; flex-direction: column; background: #111; }
+xr-start { display: block; flex-shrink: 0; }
+.scene-status { box-sizing: border-box; width: 100%; height: 120px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px 24px calc(12px + env(safe-area-inset-bottom)); color: #fff; font-size: 14px; line-height: 1.6; text-align: center; }
+.scene-status button { margin: 0; }

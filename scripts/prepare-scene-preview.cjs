@@ -4,17 +4,17 @@ const path = require("node:path");
 const assert = require("node:assert/strict");
 
 async function main() {
-  const [assetId, workspaceId] = process.argv.slice(2);
+  const [sceneId, organizationId] = process.argv.slice(2);
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  assert.ok(uuid.test(assetId || "") && uuid.test(workspaceId || ""), "用法：npm run scene:preview -- <sceneAssetId> <workspaceId>");
-  const response = await fetch("http://127.0.0.1:3000/api/miniapp/assets/scene", {
+  assert.ok(uuid.test(sceneId || "") && uuid.test(organizationId || ""), "用法：npm run scene:preview -- <sceneId> <organizationId>");
+  const response = await fetch("http://127.0.0.1:3000/api/miniapp/scenes/preview", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ asset_id: assetId, p_workspace_id: workspaceId }),
+    body: JSON.stringify({ scene_id: sceneId, organization_id: organizationId }),
     signal: AbortSignal.timeout(15000),
   });
   const manifest = await response.json();
   assert.ok(response.ok, manifest.error || `HTTP ${response.status}`);
-  assert.equal(manifest.assetId, assetId);
+  assert.equal(manifest.assetId, sceneId);
   assert.ok(manifest.content.instances.length, "请先在 Web 编辑器添加模型并保存场景");
   const file = path.resolve(__dirname, "../project.private.config.json");
   const config = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -23,7 +23,7 @@ async function main() {
   const name = "Scene 本地全流程验证";
   const previous = list.find((item) => item.name === name);
   const entry = { id: previous?.id ?? Math.max(0, ...list.map((item) => item.id || 0)) + 1,
-    name, pathName: "labs/xr-three/scene-preview", query: new URLSearchParams({ assetId, workspaceId }).toString(), scene: null };
+    name, pathName: "labs/xr-three/scene-preview", query: new URLSearchParams({ sceneId, organizationId }).toString(), scene: null };
   if (previous) Object.assign(previous, entry);
   else list.push(entry);
   fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");

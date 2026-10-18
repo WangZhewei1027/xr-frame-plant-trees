@@ -1,20 +1,28 @@
-# Scene 素材播放
+# Scene 播放与扫码预览
 
-`scene` 是普通 asset 类型，通过现有 `get_nearby_assets` 或匹配点关联素材列表进入串行放置队列。没有工作空间模式切换、场景候选页或独立发布接口。
+Scene、基础 Asset 属于团队，地图合集通过 Placement 引用它们。Scene 保存即生效，没有发布、版本选择或旧协议分支；地图和独立预览均读取最新保存的 `scene.document`，模型按团队 Asset ID 解析当前 URL。修改资产后，下次加载场景使用新资源。
 
-`assets/scene.js` 调用 `backendRpc("get_scene_asset", { asset_id, p_workspace_id, p_organization_id })`，按当前素材内容加载。Web 的 `sanlinlaojie/docs/scene-asset.md` 和 `lib/scene/protocol.ts` 定义完整 JSON 与接口。
+## 地图合集
 
-- 场景 JSON 在 asset.text_content，资源用同工作空间的模型 asset ID；服务端每次解析当前模型 URL。替换模型在下次加载生效，删除/移出工作空间则报依赖错误。
-- 仅支持 composition：最多 8 个资源、24 个实例、600 秒。每实例独立克隆及动画，按米制 position/quaternion/scale 布局，不归一化尺寸。
-- 兼容协议 1 和 2。协议 2 的 `tracks` 存储 Theatre.js 编排的位移、XYZ 欧拉角旋转（弧度）和缩放曲线，`transform-tracks.js` 求值归一化贝塞尔曲线及停顿关键帧，与 GLB 动画共用播放时间；小程序不引入 Theatre.js。
-- 只填标题创建的空白场景是合法草稿，`instances` 为空时跳过 AR 放置，不占 scene 容量。
-- `lib/scene-runtime/composition.js` 保留统一时间轴：延迟开始前保持第 0 帧；暂停不推进时间；循环保留跨边界的时间余量；结束冻结；点击暂停/继续或结束后重播。
-- 场景整体在加载完成时相机前方 2 米、下方 1.4 米；相机水平朝向决定场景朝向，场景内部不参与普通素材斥力。
-- 整场登记为一个 `nodeList` 条目。现有容量引擎的 scene 桶最多 1 场，替换时整场回收；普通模型/文字/音视频保留原有桶。
-- 复用内容代次、页面隐藏、GPS/匹配切换与统一清场。每个 await 后检查当前代次，过期模型句柄释放，不重新挂载。
-- 任一资源或 clip 出错时整场失败并释放所有已取得句柄。沿用现有素材错误事件，不启动残缺场景。
-- 仅作场景资源的模型不设置独立展示位置；有 GPS 或匹配关联的模型仍按普通素材独立展示。
+GPS、巨大模型、商户及识别点接口返回地图 Placement，返回值的 `id` 是投放 ID。小程序使用它做去重、容量管理和获取内容；不要把它当作基础 Asset ID。既有 `workspaceId` 参数表示地图合集，`organizationId` 表示团队。
 
-`npm test` 包含 `scripts/test-scene-asset.cjs`，使用实际 Three bundle + 原生 API 替身。真机图像、骨骼动画、内存和帧率仍需 iOS/Android 验证。
+地图中的 Scene 继续进入统一素材放置队列，通过 `backendRpc("get_scene_asset", { asset_id, p_workspace_id, p_organization_id })` 请求 `/api/miniapp/assets/scene`；这里 `asset_id` 是发现接口返回的 Placement ID。没有独立内容版本。归档 Scene 不破坏已存在的地图引用，但不能新增投放。
 
-从 Web 创建场景到小程序自动检查、画面验证的完整流程，见 [Web → 小程序场景自动联调](scene-auto-debug.md)。后端地址和 IP 自动更新配置见 [本地开发环境](local-development.md)。
+## 微信扫码独立预览
+
+管理端 Scene 编辑器的二维码与地图合集共享微信生成和 OSS 缓存流程。入口为 `pages/index/index?organizationId=<teamId>&sceneId=<sceneId>`，首页直接转到 `pages/scene/scene`，不改写地图合集配置或扫码历史，也不请求 GPS。
+
+预览页调用 `POST /api/miniapp/scenes/preview`，请求 `{ scene_id, organization_id }`。接口校验团队归属、团队和场景的归档状态，返回不可缓存的当前场景。已归档 Scene 的独立预览不可用。未保存的本地编辑不会进入预览。
+
+- 场景模型加载与 AR 稳定等待同时进行；只有连续有效相机帧累计满 2 秒且资源就绪，才显示整场。
+- 显示时取最新相机位置与水平朝向，放在前方 2 米、与相机同高处。地图触发的 Scene 保留前方 2 米、下方 1.4 米的放置方式。
+- 超过 250ms 没有有效帧会重新计时。隐藏页面、AR 错误、重试或卸载会取消加载、重置等待并释放迟到的资源。
+- 加载、等待、空场景和错误状态显示在画布下方的状态栏；错误可重试，空场景不会占用播放容量。
+
+## 播放器
+
+运行时只接收 `schemaVersion: 2` 的 composition manifest；服务端编辑文档由后端编译为此协议，不是资产内容版本。最多 8 个资源、24 个实例、600 秒。实例独立克隆，按米制 position/quaternion/scale 布局，不归一化尺寸。
+
+`lib/scene-runtime/composition.js` 统一推进 GLB 动画和 Theatre 编排曲线。暂停不推进时间；循环保留跨边界余量；结束冻结；轻触场景暂停/继续或重播。整场登记一个 `nodeList` 条目，容量桶最多 1 场，替换时整场回收。实例不参与普通素材斥力。任一资源或动画片段失败会释放整场，不显示残缺场景。
+
+`npm test` 覆盖实际 Three 播放器、地图队列、2 秒稳定等待、跟踪间断、后台取消、异步资源释放和错误重试。开发者工具的无相机联调见 [场景自动联调](scene-auto-debug.md)；VisionKit 相机追踪及实际放置效果需真机验证。

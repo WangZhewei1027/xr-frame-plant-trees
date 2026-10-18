@@ -64,6 +64,9 @@ function makeLoader(wx, overrides = {}) {
     Component(value) {
       context.component = value;
     },
+    Page(value) {
+      context.page = value;
+    },
   });
   const modules = new Map();
   for (const [relative, exports] of Object.entries(overrides))
@@ -110,7 +113,7 @@ const STAGE = {
 };
 function compositionManifest(o = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     assetId: "dance",
     content: {
       kind: "composition",
@@ -175,6 +178,34 @@ function fakeCache(THREE, { failing = new Set(), defer = false } = {}) {
 }
 
 async function main() {
+  // QR dispatch must not touch the map selection, history or location workflow.
+  {
+    const sceneId = "8a5219f1-a635-46f7-9b3e-70d7c02ec63a";
+    const organizationId = "512301ab-2679-4350-81e1-520a3ab2afd4";
+    let redirected, retried = false;
+    const loader = makeLoader(makeWx({
+      redirectTo: ({ url }) => { redirected = url; },
+      getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 753, pixelRatio: 3 }),
+    }), { "utils/backend.ts": { setConfig() { throw new Error("QR changed map config"); } } });
+    const mount = () => ({ ...loader.context.page, data: { ...loader.context.page.data },
+      setData(patch) { Object.assign(this.data, patch); } });
+    loader.load(path.join(root, "pages/index/index.ts"));
+    const index = mount();
+    await index.onLoad({ sceneId, organizationId }); index.onShow();
+    assert.equal(redirected, `/pages/scene/scene?sceneId=${sceneId}&organizationId=${organizationId}`);
+    loader.load(path.join(root, "pages/scene/scene.ts"));
+    const invalid = mount(); invalid.onLoad({ sceneId: "invalid", organizationId });
+    assert.equal(invalid.data.invalid, true); assert.equal(invalid.data.sceneId, "");
+    const page = mount(); page.onLoad({ sceneId, organizationId });
+    assert.equal(page.data.sceneId, sceneId); assert.equal(page.data.renderHeight, 950);
+    page.onRenderStatus({ detail: { state: "error", message: "相机权限未开启" } });
+    assert.equal(page.data.state, "error"); assert.equal(page.data.message, "相机权限未开启");
+    page.selectComponent = () => ({ retryScenePreview() { retried = true; } });
+    page.retry(); assert.equal(retried, true);
+    page.onSceneStatus({ detail: { state: "ready", message: "轻触场景" } });
+    assert.equal(page.data.state, "ready");
+    console.log("PASS QR entry: isolated map config, valid parameters, AR error and retry");
+  }
   const wx = makeWx();
   const { load, lib } = makeLoader(wx);
   const { THREE } = lib("three-runtime/runtime");
@@ -379,6 +410,72 @@ async function main() {
     console.log("PASS load failure/cancel: all acquired handles released, error diagnostics, retry, idempotent dispose");
   }
 
+  // QR preview uses the real composition player and the same mounting/disposal code.
+  {
+    let response = { statusCode: 200, data: compositionManifest() };
+    let pending;
+    const calls = [];
+    const loader = makeLoader(makeWx(), { "utils/backend.ts": {
+      CONFIG: {}, fetchScenePreview: async (...args) => { calls.push(args); return pending || response; },
+    } });
+    const { THREE: T } = loader.lib("three-runtime/runtime");
+    const methods = loader.load(path.join(root, "components/xr-start/assets/index.js"))({ buckets: { scene: { cap: 1, evict: "farthest" } }, minLifetimeMs: 0 });
+    const preview = loader.load(path.join(root, "components/xr-start/scene-preview.js"));
+    const camera = new T.PerspectiveCamera(); camera.position.set(0, 1.6, 0);
+    const cache = fakeCache(T);
+    const states = [];
+    const host = { ...methods, ...preview, data: { sceneId: "dance", sceneOrganizationId: "team" },
+      _scenePreviewMode: true, _modelCache: cache, nodeList: [], _contentEpoch: 1, _arReady: true,
+      _allowedAssetIds: new Set(), shadowRoot: new T.Group(), retrievalMode: "gps",
+      getCamTransform: () => camera, triggerEvent: (_, detail) => states.push(detail),
+    };
+    let now = 0;
+    const tick = (frames) => { for (let i = 0; i < frames; i++) host._tickScenePreview(0.1, now += 100); };
+    await host._beginScenePreview();
+    assert.deepEqual(calls[0], ["dance", "team"]);
+    tick(20); assert.equal(host.nodeList.length, 0, "never display before 2 seconds of valid camera frames");
+    camera.position.x = 9;
+    tick(1); assert.equal(host.nodeList.length, 1);
+    near(host.nodeList[0].node.position.x, 9, "placement uses the camera at display time");
+    near(host.nodeList[0].node.position.y, 1.6); near(host.nodeList[0].node.position.z, -2);
+    tick(20); assert.equal(host.nodeList.length, 1, "mount only once");
+    host._destroyNode(host.nodeList[0]); host.nodeList = [];
+    assert.equal(cache.stats.live, 0);
+
+    await host._beginScenePreview(); tick(19);
+    now += 1000; tick(1); tick(19);
+    assert.equal(host.nodeList.length, 0, "tracking gap restarts stability window");
+    tick(1); assert.equal(host.nodeList.length, 1);
+    host._destroyNode(host.nodeList[0]); host.nodeList = [];
+
+    let finish;
+    pending = new Promise(resolve => { finish = resolve; });
+    const old = host._beginScenePreview();
+    host._retrievalPaused = true; host._cancelScenePreview(); host._contentEpoch++;
+    finish(response); await old; tick(30);
+    assert.equal(host.nodeList.length, 0); assert.equal(cache.stats.live, 0, "background cancels late manifests");
+    pending = null; host._retrievalPaused = false;
+    const delayed = fakeCache(T, { defer: true }); host._modelCache = delayed;
+    const loading = host._beginScenePreview();
+    await until(() => delayed.stats.acquires === 2, "preview model load");
+    tick(30); assert.equal(host.nodeList.length, 0, "AR readiness alone cannot reveal unloaded models");
+    host._cancelScenePreview(); host._contentEpoch++; delayed.resolvePending(); await loading;
+    assert.equal(delayed.stats.live, 0, "late model handles are released after cancel");
+    host._modelCache = cache;
+    response = { statusCode: 404, data: { error: "场景不存在" } };
+    await host._beginScenePreview(); assert.equal(states.at(-1).state, "error");
+    response = { statusCode: 200, data: compositionManifest({ instances: [] }) };
+    await host._beginScenePreview(); assert.equal(states.at(-1).state, "empty");
+    response = { statusCode: 200, data: compositionManifest() };
+    await host._beginScenePreview(); tick(21); assert.equal(states.at(-1).state, "ready", "retry works after error and empty content");
+    for (const entry of host.nodeList) host._destroyNode(entry);
+    host._cancelScenePreview(); assert.equal(cache.stats.live, 0);
+    let restartedAR = false;
+    host._arReady = false; host.retryAR = () => { restartedAR = true; };
+    host.retryScenePreview(); assert.equal(restartedAR, true, "retry starts AR again when initialization failed");
+    console.log("PASS QR scene: stable 2 seconds, latest camera, single mount, tracking gaps, background cancellation, slow models, errors and retry");
+  }
+
   // Real queue integration: same registry, tick, tap, capacity and clearing as other assets.
   {
     let response = { statusCode: 200, data: compositionManifest() };
@@ -454,6 +551,8 @@ async function main() {
     await assert.rejects(host._placeAsset(asset), /场景资源不存在/);
     response = { statusCode: 200, data: { ...compositionManifest(), schemaVersion: 3 } };
     await assert.rejects(host._placeAsset(asset), /不支持/);
+    response = { statusCode: 200, data: { ...compositionManifest(), schemaVersion: 1 } };
+    await assert.rejects(host._placeAsset(asset), /不支持/, "removed protocol is not accepted");
     assert.equal(host.nodeList.length, 0);
 
     response = { statusCode: 200, data: { ...compositionManifest({ instances: [] }), schemaVersion: 2 } };

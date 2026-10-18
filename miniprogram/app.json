@@ -1,12 +1,17 @@
 {
   "pages": [
     "pages/index/index",
-    "pages/ar/ar"
+    "pages/ar/ar",
+    "pages/scene/scene"
   ],
   "subpackages": [
     {
       "root": "labs/xr-three",
-      "pages": ["index", "bridge", "scene-preview"]
+      "pages": [
+        "index",
+        "bridge",
+        "scene-preview"
+      ]
     }
   ],
   "window": {

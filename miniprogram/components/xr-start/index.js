@@ -1,4 +1,5 @@
 const XR_CONFIG = require("./config");
+const scenePreview = require("./scene-preview");
 const gps = require("./gps");
 const navigation = require("./navigation");
 const matching = require("./matching/index");
@@ -93,6 +94,8 @@ function buildInitialState() {
 
 Component({
   properties: {
+    sceneId: { type: String, value: "" },
+    sceneOrganizationId: { type: String, value: "" },
     width: { type: Number, value: 300 },
     height: { type: Number, value: 300 },
   },
@@ -115,8 +118,8 @@ Component({
       this._forwardScratch = new THREE.Vector3();
       this._raycaster = new THREE.Raycaster();
       this._tapPoint = new THREE.Vector2();
-      this.startGPSWatch();
-      this.fetchOrgStyle();
+      this._scenePreviewMode = !!this.data.sceneId;
+      if (!this._scenePreviewMode) { this.startGPSWatch(); this.fetchOrgStyle(); }
     },
     ready() {
       this.createSelectorQuery()
@@ -184,10 +187,12 @@ Component({
     },
     show() {
       this._pageVisible = true;
+      if (this._scenePreviewMode) this._retrievalPaused = false;
       if (this._runtime && !this._sessionActive) this.startAR();
     },
   },
   methods: {
+    ...scenePreview,
     ...gps,
     ...matching,
     ...assetsMethods,
@@ -212,6 +217,7 @@ Component({
         this._firstFetchStarted = false;
         this._sessionActive = false;
         this._arReady = false;
+        this._cancelScenePreview();
         this._cancelRetrieval();
         this._clearRemoteAssets();
         this.setData({
@@ -239,6 +245,7 @@ Component({
       this._fetchAnchorXZ = null;
       this.resetCaptureTiming();
       this.setData({ arReady: true, renderStatus: "", renderError: "" });
+      if (this._scenePreviewMode) { this._beginScenePreview(); return; }
       this._maybeStartFirstFetch();
       this.flushPendingDisplayAssets();
       this._maybeStartConfetti();
@@ -246,6 +253,12 @@ Component({
     handleTick(dt) {
       if (this._disposed || !this._arReady) return;
       this._frameDelta = dt;
+      if (this._scenePreviewMode) {
+        this._runtime.updateReticle(false);
+        this._tickScenePreview(dt);
+        this.tickModelAnimation();
+        return;
+      }
       const camera = this._runtime.camera,
         camPos = camera.position;
       this.sampleCaptureMotion(camera);
@@ -335,7 +348,7 @@ Component({
               node = node.parent;
             }
           }
-          if (this.retrievalMode === "gps") this.placeNode();
+          if (!this._scenePreviewMode && this.retrievalMode === "gps") this.placeNode();
         })
         .exec();
     },

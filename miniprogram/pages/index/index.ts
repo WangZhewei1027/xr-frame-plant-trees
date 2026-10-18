@@ -33,9 +33,15 @@ Page({
     dropdownOpen: false,
     /** 被用户明确拒绝的权限名称，如「位置、相机」；为空则不显示引导条 */
     deniedPermText: "",
+    openingScene: false,
   },
 
   async onLoad(options: Record<string, string | undefined>) {
+    if (options.sceneId) {
+      this.setData({ openingScene: true });
+      wx.redirectTo({ url: `/pages/scene/scene?sceneId=${encodeURIComponent(options.sceneId)}&organizationId=${encodeURIComponent(options.organizationId || "")}` });
+      return;
+    }
     setConfig({
       organizationId: options.organizationId,
       workspaceId: options.workspaceId,
@@ -47,6 +53,7 @@ Page({
   },
 
   onShow() {
+    if (this.data.openingScene) return;
     // 从 AR 等页面返回时刷新历史列表的选中态
     this.refreshHistory();
     // 用户可能在 AR 页拒绝过授权，或从系统设置返回，每次展示都重查
