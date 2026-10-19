@@ -23,37 +23,48 @@ const SCAN_HISTORY_STORAGE_KEY = "config:scan:history:v1";
 /** 历史记录最多保留条数，超出则淘汰最旧 */
 const SCAN_HISTORY_MAX = 20;
 
-/** 一条历史扫码记录 */
-export interface ScanHistoryEntry {
-  organizationId: string;
+export interface ScanConfig {
+  organizationId?: string;
   workspaceId?: string;
+  sceneId?: string;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isSceneConfig(config: ScanConfig): config is ScanConfig & { organizationId: string; sceneId: string } {
+  return UUID.test(config.sceneId || "") && UUID.test(config.organizationId || "");
+}
+
+/** 一条历史扫码记录 */
+export interface ScanHistoryEntry extends ScanConfig {
+  organizationId: string;
   /** 展示用名称，由 index 拉取后回填 */
   orgName?: string;
   workspaceName?: string;
+  sceneName?: string;
   /** 最近使用时间戳，用于排序 */
   ts: number;
 }
 
-/** 同一 org+workspace 视为同一条记录 */
-function historyKey(organizationId?: string, workspaceId?: string): string {
-  return `${organizationId || ""}|${workspaceId || ""}`;
+/** 场景与地图合集分别去重，即便它们的 UUID 相同。 */
+export function scanHistoryKey(config: ScanConfig): string {
+  return `${config.organizationId || ""}|${config.sceneId ? `scene:${config.sceneId}` : `map:${config.workspaceId || ""}`}`;
 }
 
 /** 读取持久化的上次扫码参数 */
-function loadPersistedScanConfig(): {
-  organizationId?: string;
-  workspaceId?: string;
-} {
+function loadPersistedScanConfig(): ScanConfig {
   try {
     const saved = wx.getStorageSync(SCAN_CONFIG_STORAGE_KEY);
-    if (saved && typeof saved === "object" && saved.organizationId) {
+    if (saved && typeof saved === "object" && typeof saved.organizationId === "string" && saved.organizationId) {
+      if (saved.sceneId && !isSceneConfig(saved)) return {};
       // 必须显式包含 workspaceId 键（即便值为 undefined），
       // 否则 spread 合并时 DEFAULT_CONFIG.workspaceId 会静默渗入。
       // 背景：undefined 值会被 JSON 序列化丢弃，Storage 里不存在该 key，
       // 导致 { ...DEFAULT_CONFIG, ...savedObject } 无法覆盖 workspaceId。
       return {
         organizationId: saved.organizationId as string,
-        workspaceId: (saved.workspaceId as string) || undefined,
+        workspaceId: saved.sceneId ? undefined : (saved.workspaceId as string) || undefined,
+        sceneId: saved.sceneId || undefined,
       };
     }
     return {};
@@ -64,10 +75,7 @@ function loadPersistedScanConfig(): {
 }
 
 /** 持久化扫码参数 */
-function persistScanConfig(config: {
-  organizationId?: string;
-  workspaceId?: string;
-}) {
+function persistScanConfig(config: ScanConfig) {
   try {
     wx.setStorageSync(SCAN_CONFIG_STORAGE_KEY, config);
   } catch (e) {
@@ -81,7 +89,7 @@ export function loadScanHistory(): ScanHistoryEntry[] {
     const saved = wx.getStorageSync(SCAN_HISTORY_STORAGE_KEY);
     if (Array.isArray(saved)) {
       return saved
-        .filter((e) => e && typeof e === "object" && e.organizationId)
+        .filter((e) => e && typeof e === "object" && typeof e.organizationId === "string" && e.organizationId && (!e.sceneId || isSceneConfig(e)))
         .sort((a, b) => (b.ts || 0) - (a.ts || 0));
     }
     return [];
@@ -108,30 +116,35 @@ export function saveScanHistory(list: ScanHistoryEntry[]): void {
 
 /**
  * 写入/更新一条历史记录。
- * 同一 org+workspace 去重（更新名称与时间戳并置顶），超出上限淘汰最旧。
+ * 同一团队和目标去重（更新名称与时间戳并置顶），超出上限淘汰最旧。
  */
 export function recordScanHistory(entry: {
   organizationId?: string;
   workspaceId?: string;
+  sceneId?: string;
   orgName?: string;
   workspaceName?: string;
+  sceneName?: string;
 }): void {
   if (!entry.organizationId) return;
+  if (entry.sceneId && !isSceneConfig(entry)) return;
   try {
     const list = loadScanHistory();
-    const key = historyKey(entry.organizationId, entry.workspaceId);
+    const key = scanHistoryKey(entry);
     const filtered = list.filter(
-      (e) => historyKey(e.organizationId, e.workspaceId) !== key,
+      (e) => scanHistoryKey(e) !== key,
     );
     const prev = list.find(
-      (e) => historyKey(e.organizationId, e.workspaceId) === key,
+      (e) => scanHistoryKey(e) === key,
     );
     filtered.unshift({
       organizationId: entry.organizationId,
-      workspaceId: entry.workspaceId || undefined,
+      workspaceId: entry.sceneId ? undefined : entry.workspaceId || undefined,
+      sceneId: entry.sceneId || undefined,
       // 名称缺省时沿用旧记录，避免覆盖已有展示名
       orgName: entry.orgName ?? prev?.orgName,
       workspaceName: entry.workspaceName ?? prev?.workspaceName,
+      sceneName: entry.sceneName ?? prev?.sceneName,
       ts: Date.now(),
     });
     wx.setStorageSync(
@@ -145,29 +158,33 @@ export function recordScanHistory(entry: {
 
 // 优先级：扫码参数 > storage 上次扫码参数 > 兜底默认值
 // 此处初始化时先合并 storage（模块加载时生效，onLoad 中若有扫码参数会进一步覆盖）
-export const CONFIG: { organizationId?: string; workspaceId?: string } = {
+export const CONFIG: ScanConfig = {
   ...DEFAULT_CONFIG,
   ...loadPersistedScanConfig(),
 };
 
 /** 从页面 query 参数更新 CONFIG；若有扫码参数则持久化到 Storage */
-export function setConfig(params: {
-  organizationId?: string;
-  workspaceId?: string;
-}) {
-  const hasScanParams = !!(params.organizationId || params.workspaceId);
-  if (params.organizationId) {
+export function setConfig(params: ScanConfig) {
+  const hasScanParams = !!(params.organizationId || params.workspaceId || params.sceneId);
+  if (!hasScanParams) return;
+  // Scene 必须携带自己的团队，不能从上一个地图入口借用团队 ID。
+  if (params.sceneId) {
+    if (!isSceneConfig(params)) return;
     CONFIG.organizationId = params.organizationId;
-    // 新 orgId 未携带 workspaceId 时，清除旧 workspaceId，避免跨组织错配
-    if (!params.workspaceId) CONFIG.workspaceId = undefined;
+    CONFIG.sceneId = params.sceneId;
+    CONFIG.workspaceId = undefined;
+  } else {
+    CONFIG.sceneId = undefined;
+    if (params.organizationId) {
+      CONFIG.organizationId = params.organizationId;
+      // 新 orgId 未携带 workspaceId 时，清除旧 workspaceId，避免跨组织错配
+      if (!params.workspaceId) CONFIG.workspaceId = undefined;
+    }
+    if (params.workspaceId) CONFIG.workspaceId = params.workspaceId;
   }
-  if (params.workspaceId) CONFIG.workspaceId = params.workspaceId;
-  if (hasScanParams) {
-    persistScanConfig({
-      organizationId: CONFIG.organizationId,
-      workspaceId: CONFIG.workspaceId,
-    });
-  }
+  persistScanConfig({ ...CONFIG });
+  // 在网络请求和页面跳转前落盘，真机调试无启动参数时也可恢复。
+  recordScanHistory({ ...CONFIG });
 }
 
 /** 识别接口地址（matching/index.js 用 wx.uploadFile 直接上传） */
@@ -206,6 +223,16 @@ export interface OrganizationSummary {
 export interface WorkspaceSummary {
   id: string;
   name: string;
+}
+
+export interface SceneSummary {
+  id: string;
+  name: string;
+}
+
+/** 按团队刷新已扫码 Scene 的名称，不加载模型或场景内容。 */
+export function fetchScenes(ids: string[], organizationId: string): Promise<ApiResponse<SceneSummary[]>> {
+  return request(`/scenes?ids=${encodeURIComponent(ids.join(","))}&organization_id=${encodeURIComponent(organizationId)}`, "GET");
 }
 
 /** 按 id 批量取组织名称与小程序相关配置（最多 50 个） */

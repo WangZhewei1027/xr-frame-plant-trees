@@ -160,6 +160,22 @@
   letter-spacing: 1rpx;
 }
 
+.dropdown-kind {
+  flex-shrink: 0;
+  min-width: 76rpx;
+  margin-right: 20rpx;
+  padding: 6rpx 10rpx;
+  border: 1rpx solid #667866;
+  border-radius: 6rpx;
+  color: #b9d6b9;
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.dropdown-content { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 8rpx; }
+.dropdown-text { overflow-wrap: anywhere; }
+.dropdown-org { color: #999999; font-size: 22rpx; }
+
 .dropdown-check {
   width: 14rpx;
   height: 14rpx;

@@ -1,7 +1,4 @@
 <view class="scene-preview">
   <xr-start wx:if="{{sceneId && !invalid}}" id="preview" scene-id="{{sceneId}}" scene-organization-id="{{organizationId}}" width="{{renderWidth}}" height="{{renderHeight}}" style="width:{{width}}px;height:{{height}}px" bindscenestatus="onSceneStatus" bindrenderstatus="onRenderStatus" />
-  <view class="scene-status" role="status">
-    <text>{{message}}</text>
-    <button wx:if="{{state === 'error' && !invalid}}" size="mini" bindtap="retry">重试</button>
-  </view>
+  <button wx:if="{{state !== 'ready' && !invalid}}" class="place-button" disabled="{{state !== 'placeable' && state !== 'error' && state !== 'empty'}}" bindtap="place">{{state === 'error' || state === 'empty' ? '重试' : state === 'placeable' ? '放置场景' : state === 'tracking' ? '正在定位…' : '正在加载…'}}</button>
 </view>

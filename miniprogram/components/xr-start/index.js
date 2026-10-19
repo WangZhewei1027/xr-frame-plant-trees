@@ -255,7 +255,7 @@ Component({
       this._frameDelta = dt;
       if (this._scenePreviewMode) {
         this._runtime.updateReticle(false);
-        this._tickScenePreview(dt);
+        this._tickScenePreview();
         this.tickModelAnimation();
         return;
       }

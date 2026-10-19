@@ -1,203 +1,73 @@
-# 扫码参数优先级与持久化策略
+# 扫码参数与真机调试恢复
 
-## 背景
+地图合集和 Scene 共用最近入口与扫码历史。Scene 入口使用
+`organizationId + sceneId`，地图合集使用 `organizationId + workspaceId`；
+同一个当前入口不会同时包含 `sceneId` 和 `workspaceId`。
 
-小程序支持通过扫描二维码携带参数（`organizationId`、`workspaceId`）直接跳转进入。  
-但用户并非每次都从扫码入口进入，也可能直接从最近使用列表、桌面快捷方式等途径打开。  
-因此需要一套优先级策略，保证参数来源的正确性与连续性。
+## 真机调试
 
-## 优先级（高 → 低）
+1. 带参数打开一次首页：扫码，或将开发者工具的编译条件设为
+   `pages/index/index`，启动参数设为 `organizationId=<团队 UUID>&sceneId=<场景 UUID>`。
+2. 首页在跳转 Scene **之前**同步写入本地缓存和历史，无需等待网络请求成功。
+3. 后续真机调试或普通启动没有 query 时，直接恢复最近的 Scene。
+   Scene 页面本身无参数启动也会读取缓存。
+4. Scene 使用顶部系统返回键回到选择页，点击历史可切换目标。
+   最近选择会持久化，下次无参数启动使用新选择。
 
-```
-扫码参数（当次 onLoad query）
-    ↓ 无扫码参数
-Storage 上次扫码参数（key: config:scan:v1）
-    ↓ Storage 也无记录
-兜底默认值（DEFAULT_CONFIG 硬编码）
-```
+缓存保存在各自的微信运行环境中；开发者工具与手机不共享 Storage。
+需要在用于真机调试的环境中带参数进入一次。清除小程序数据后也需要重新设置。
+旧版未保存过的 Scene 参数无法从已有地图缓存推断出来。
 
-## 实现位置
+## 优先级与职责
 
-`miniprogram/utils/backend.ts`
-
-### 模块初始化时（加载即生效）
-
-```ts
-export const CONFIG = {
-  ...DEFAULT_CONFIG,
-  ...loadPersistedScanConfig(), // Storage 覆盖默认值
-};
+```text
+当次首页 query > Storage 上次入口 > DEFAULT_CONFIG
 ```
 
-### onLoad 时（扫码参数覆盖 Storage）
+- `utils/backend.ts` 加载时用 Storage 初始化模块级单例 `CONFIG`。
+- 首页 `onLoad` 调用 `setConfig(options)`；空参数保持原选择。
+- 有效 Scene 参数必须同时包含 Scene 和团队 UUID，不能借用上个入口的团队。
+- 选择 Scene 会清除旧 `workspaceId`；选择地图或仅团队会清除旧 `sceneId`。
+  仅提供团队时同时清除旧 `workspaceId`，防止跨团队错配。
+- 有效参数先更新内存，再写当前入口与历史，最后跳转或请求名称。
+- 无效 Scene query 不覆盖缓存，进入 Scene 页显示参数错误，不回退到另一场景。
+- 首页恢复 Scene 使用 `navigateTo`，保留首页供系统返回；返回时不再次自动跳转。
+  `pages/index/index?select=1` 可用于直接调试选择页，不清除缓存。
+- 首页 `goToAR()` 根据当前目标进入 Scene 或地图 AR 页。
+- AR、Scene 等子页面不持久化自己的 URL，避免旧页面参数覆盖较新的扫码选择。
 
-**只有 `index.ts`** 在 `onLoad` 中调用 `setConfig`：
+## Storage 与历史
 
-```ts
-setConfig({
-  organizationId: options.organizationId,
-  workspaceId: options.workspaceId,
-});
-```
+沿用现有 Storage key 和地图记录，无需清理已有数据。
 
-> `ar.ts` 不调用 `setConfig`。ar 页始终由 `index.ts` 的 `goToAR()` 跳转进入，
-> CONFIG 在此之前已由 index 正确设置。若 ar.ts 也持久化 URL 参数，
-> 微信「最近使用」场景下携带的**过期 URL 参数**会覆盖 Storage 中更新的扫码结果。
+| Key | 内容 |
+| --- | --- |
+| `config:scan:v1` | `{ organizationId, workspaceId?, sceneId? }` |
+| `config:scan:history:v1` | 最近使用的入口数组，附带 `orgName?`、`workspaceName?`、`sceneName?`、`ts` |
 
-`setConfig` 内部逻辑：
-1. 若 `options` 中存在任意参数，视为本次由扫码进入。
-2. 将扫码参数写入 CONFIG（内存态立即生效）。
-3. 将完整 CONFIG 持久化到 Storage，供下次无扫码参数时使用。
+历史按团队、目标类型、目标 ID 去重：
 
-```ts
-function setConfig(params) {
-  const hasScanParams = !!(params.organizationId || params.workspaceId);
-  if (params.organizationId) {
-    CONFIG.organizationId = params.organizationId;
-    // 新 orgId 未携带 workspaceId 时，清除旧 workspaceId，避免跨组织错配
-    if (!params.workspaceId) CONFIG.workspaceId = undefined;
-  }
-  if (params.workspaceId) CONFIG.workspaceId = params.workspaceId;
-  if (hasScanParams) {
-    persistScanConfig({ organizationId: CONFIG.organizationId, workspaceId: CONFIG.workspaceId });
-  }
-}
-```
+- Scene：`organizationId|scene:sceneId`
+- 地图合集：`organizationId|map:workspaceId`
 
-## Storage Key
+最多保留 20 条，最近使用置顶。地图和 Scene 即使 UUID 相同也不会互相覆盖。
+每条记录显示独立的 `Scene` / `Map` 标签、内容名称和团队名称。
+Scene 名称通过 `/api/miniapp/scenes?ids=…&organization_id=…` 按团队批量查询，
+与地图名称一样缓存并刷新。没有名称缓存且请求失败时显示「场景名称暂不可用」。
+未获取到名称时保留已缓存的名称。
 
-| Key | 格式 | 用途 |
-|-----|------|------|
-| `config:scan:v1` | `{ organizationId?: string, workspaceId?: string }` | 持久化上次扫码参数 |
-| `config:scan:history:v1` | `ScanHistoryEntry[]` | 历史扫码过的 org/workspace 列表 |
-
-命名遵循 `<module>:<name>:v<version>` 规范，无多租户维度（config 本身即租户标识）。
-
-## 历史记录与主页切换
-
-主页（`index`）提供下拉菜单，可在历史扫码过的 org/workspace 之间切换，无需重新扫码。
-
-### 数据结构
-
-```ts
-interface ScanHistoryEntry {
-  organizationId: string;
-  workspaceId?: string;
-  orgName?: string;        // 展示名，由 index 拉取后回填
-  workspaceName?: string;
-  ts: number;              // 最近使用时间戳，用于排序与去重置顶
-}
-```
-
-### 写入时机
-
-`index.ts` 的 `fetchNames()` 拉取到 org/workspace 名称后，调用
-`recordScanHistory()` 将当前 CONFIG（含名称）写入历史：
-
-- **去重**：同一 `org|workspace` 组合视为一条，更新名称与时间戳并置顶。
-- **名称兜底**：本次未拉到名称时沿用旧记录，避免覆盖已有展示名。
-- **上限**：最多保留 `SCAN_HISTORY_MAX = 20` 条，超出淘汰最旧。
-
-### 切换逻辑
-
-用户从下拉菜单选择某条历史记录时，`onSelectHistory()`：
-1. 复用 `setConfig()` 写入内存 CONFIG 并持久化为当前扫码参数（`config:scan:v1`）。
-2. 重新调用 `fetchNames()` 刷新标题/副标题/footer，并回填历史。
-
-> 切换复用 `setConfig`，因此与扫码进入共享同一套优先级与持久化逻辑——
-> 切换后的选择会成为下次冷启动的「上次扫码参数」。
-
-> `onShow` 时调用 `refreshHistory()` 刷新选中态，保证从 AR 等页面返回后列表正确。
-
-### 名称的后端同步
-
-历史记录里的 `orgName` / `workspaceName` 是**缓存的展示名**，后端重命名后可能过期。两条刷新路径：
-
-1. **当前选中项**：`fetchNames()`（onLoad / 切换时）总会实时拉取并经 `recordScanHistory` 回填，因此当前 org/workspace 名称始终最新。
-2. **整个历史列表**：onLoad 首屏渲染后异步调用 `refreshHistoryNames()`，用两次
-   批量请求 `fetchOrganizations(ids)` / `fetchWorkspaces(ids)`（`GET /api/miniapp/organizations?ids=…` 与 `/workspaces?ids=…`，org / workspace 各一次，每次最多 50 个 id）覆盖全部历史条目，名称有变化时写回
-   Storage 并重渲染下拉列表。
-
-> `refreshHistoryNames` 不阻塞首屏；仅在确有名称变化时才写 Storage。
-> 后端查不到（已删除）的条目**保留旧名不清空**，避免误删展示信息。
+首页会批量刷新团队、地图与 Scene 名称。请求完成时以最新历史合并名称，避免慢请求覆盖
+期间新加入的 Scene。当前标题刷新也会校验目标，避免快速切换时显示旧目标名称。
 
 ## 容错
 
-- `getStorageSync` / `setStorageSync` 均包裹 `try/catch`。
-- 读取失败：返回空对象，CONFIG 回退到默认值。
-- 写入失败：`console.error` 记录，不阻塞主流程。
-- Storage 内容读出后做类型校验（`typeof saved === "object"`），非法值回退为空对象。
+- Storage 读写失败不阻塞本次入口；写入失败时不能保证下次启动恢复。
+- 非法缓存回退到默认值；非法 Scene 不进入历史。
+- JSON 会丢弃 `undefined`。读取有效缓存时必须显式返回 `workspaceId: undefined`
+  （Scene 或仅团队入口），覆盖默认地图 ID，防止默认地图混入缓存的入口。
 
-### ⚠️ `undefined` 序列化陷阱
+## 回归验证
 
-`workspaceId: undefined` 会被 `JSON.stringify` **静默丢弃**，导致 Storage 里只存 `{ organizationId }`（无 `workspaceId` key）。
-下次冷启动 spread 合并时，`DEFAULT_CONFIG.workspaceId` 会渗入：
-
-```
-{ ...DEFAULT_CONFIG, ...{ organizationId: "ORG1" } }
-  → { organizationId: "ORG1", workspaceId: DEFAULT_WS }  ← 错误！
-```
-
-**修复**：`loadPersistedScanConfig` 在 Storage 有 `organizationId` 时，显式返回 `workspaceId` 键（即便值为 `undefined`），
-让 spread 能正确覆盖 DEFAULT：
-
-```ts
-function loadPersistedScanConfig() {
-  const saved = wx.getStorageSync(SCAN_CONFIG_STORAGE_KEY);
-  if (saved && typeof saved === "object" && saved.organizationId) {
-    return {
-      organizationId: saved.organizationId as string,
-      workspaceId: (saved.workspaceId as string) || undefined, // 显式包含 key
-    };
-  }
-  return {};
-}
-```
-
-## 数据流图
-
-```
-用户打开小程序
-      │
-      ▼
-模块初始化（backend.ts import）
-      │
-      └─ CONFIG = { ...DEFAULT_CONFIG, ...loadPersistedScanConfig() }
-             loadPersistedScanConfig 显式返回 workspaceId 键，
-             防止 DEFAULT 值渗入（undefined 序列化陷阱）
-      │
-      ▼
-index.ts onLoad(options)
-      │
-      ├─ options 有扫码参数？
-      │        │ Yes
-      │        ▼
-      │   setConfig(options)
-      │        │
-      │        ├─ 更新内存 CONFIG（立即生效）
-      │        └─ 写入 Storage config:scan:v1
-      │
-      │        │ No
-      │        ▼
-      │   CONFIG 保持模块初始化时的值（Storage 或 DEFAULT）
-      │
-      ▼
-goToAR() → 将当前 CONFIG 作为 URL query 传给 ar.ts
-      │
-      ▼
-ar.ts onLoad
-      │
-      └─ 不调用 setConfig（避免过期 URL 参数覆盖 Storage）
-         直接读取 CONFIG 使用
-      │
-      ▼
-业务逻辑使用 CONFIG.organizationId / CONFIG.workspaceId
-```
-
-## 注意事项
-
-- `CONFIG` 是模块级单例，整个小程序生命周期共享。
-- 不同组织/工作区的用户共用同一设备时，扫新码会覆盖 Storage 中的旧参数（符合预期）。
-- `DEFAULT_CONFIG` 仅作为最终兜底，生产环境不应长期依赖。
-- **只有 `index.ts` 调用 `setConfig` 并持久化**；其他页面（`ar.ts`、`upload.ts`）只读取 `CONFIG`，不修改也不持久化。
-- `workspaceId: undefined` 写入 Storage 时会被 JSON 序列化丢弃，`loadPersistedScanConfig` 须显式返回该键以防 DEFAULT 渗入（见「容错」章节）。
+`npm run test:scan-config` 使用真实页面和后端模块，在独立 JS runtime 间保留
+JSON 序列化的 Storage，验证 Scene 无参数冷启动、地图切换、显式 query 优先级、
+历史去重、异步名称刷新和 Storage 故障。测试也包含在 `npm test` 中。

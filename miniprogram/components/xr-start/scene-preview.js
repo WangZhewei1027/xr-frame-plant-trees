@@ -1,18 +1,18 @@
 const { fetchScenePreview } = require("../../utils/backend");
-const STABLE_SECONDS = 2;
 const MAX_FRAME_GAP_MS = 250;
 
 module.exports = {
   _scenePreviewStatus(state, message) {
+    this._scenePreviewState = state;
     this.triggerEvent("scenestatus", { state, message });
   },
   _cancelScenePreview() {
     this._scenePreviewRequest = (this._scenePreviewRequest || 0) + 1;
     this._scenePreviewPlayer?.dispose();
     this._scenePreviewPlayer = null;
-    this._scenePreviewElapsed = 0;
     this._scenePreviewFrameAt = null;
     this._scenePreviewPlaced = false;
+    this._scenePreviewState = null;
   },
   async _beginScenePreview() {
     this._cancelScenePreview();
@@ -30,28 +30,35 @@ module.exports = {
       if (request !== this._scenePreviewRequest || !this._isAssetPlacementCurrent(asset)) { player?.dispose(); return; }
       if (!player) { this._scenePreviewStatus("empty", "场景中还没有模型，请在管理端添加并保存"); return; }
       this._scenePreviewPlayer = player;
-      this._scenePreviewStatus("stabilizing", "等待 AR 稳定，场景将在前方显示…");
+      this._scenePreviewStatus("tracking", "正在获取相机位置…");
     } catch (error) {
       player?.dispose();
       if (request === this._scenePreviewRequest && this._isAssetPlacementCurrent(asset))
         this._scenePreviewStatus("error", error.message || "场景加载失败");
     }
   },
-  // Only valid AR camera frames count. Backgrounding, errors and long frame gaps reset the gate.
-  _tickScenePreview(dt, now = Date.now()) {
+  // Frames only enable manual placement. Waiting never mounts a Scene.
+  _tickScenePreview(now = Date.now()) {
     if (!this._arReady || this._retrievalPaused || this._disposed || this._scenePreviewPlaced) return;
-    if (this._scenePreviewFrameAt === null || now - this._scenePreviewFrameAt > MAX_FRAME_GAP_MS)
-      this._scenePreviewElapsed = 0;
-    else this._scenePreviewElapsed += Math.min(Math.max(dt, 0), MAX_FRAME_GAP_MS / 1000);
     this._scenePreviewFrameAt = now;
-    if (this._scenePreviewElapsed + 1e-9 < STABLE_SECONDS || !this._scenePreviewPlayer) return;
+    if (this._scenePreviewPlayer && this._scenePreviewState !== "placeable")
+      this._scenePreviewStatus("placeable", "点击放置场景");
+  },
+  placeScenePreview(now = Date.now()) {
+    if (!this._scenePreviewMode || !this._arReady || this._retrievalPaused || this._disposed || this._scenePreviewPlaced || !this._scenePreviewPlayer) return false;
+    // Reject a click against an old camera pose after tracking has stopped.
+    if (this._scenePreviewFrameAt === null || now - this._scenePreviewFrameAt > MAX_FRAME_GAP_MS) {
+      this._scenePreviewStatus("tracking", "正在获取相机位置…");
+      return false;
+    }
     const player = this._scenePreviewPlayer;
     this._scenePreviewPlayer = null;
     try {
       this._scenePreviewPlaced = this._mountScenePlayer(this._scenePreviewAsset, player);
       if (!this._scenePreviewPlaced) throw new Error("场景放置失败，请重试");
-      this._scenePreviewStatus("ready", "轻触场景可暂停或继续播放");
-    } catch (error) { player.dispose(); this._scenePreviewStatus("error", error.message); }
+      this._scenePreviewStatus("ready", "");
+      return true;
+    } catch (error) { player.dispose(); this._scenePreviewStatus("error", error.message); return false; }
   },
   retryScenePreview() {
     if (!this._scenePreviewMode || this._disposed || this._retrievalPaused) return;

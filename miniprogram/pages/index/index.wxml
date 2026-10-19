@@ -12,19 +12,24 @@
 
     <view class="switcher" wx:if="{{loaded && history.length > 1}}">
       <view class="switcher-trigger" bindtap="toggleDropdown">
-        <text class="switcher-label">切换组织 / 空间</text>
+        <text class="switcher-label">切换 Scene / Map</text>
         <view class="switcher-arrow {{dropdownOpen ? 'open' : ''}}"></view>
       </view>
       <view class="dropdown" wx:if="{{dropdownOpen}}">
         <view
           wx:for="{{history}}"
-          wx:key="ts"
+          wx:key="key"
           class="dropdown-item {{item.active ? 'active' : ''}}"
           data-org="{{item.organizationId}}"
           data-ws="{{item.workspaceId}}"
+          data-scene="{{item.sceneId}}"
           bindtap="onSelectHistory"
         >
-          <text class="dropdown-text">{{item.label}}</text>
+          <text class="dropdown-kind">{{item.kind}}</text>
+          <view class="dropdown-content">
+            <text class="dropdown-text">{{item.label}}</text>
+            <text class="dropdown-org">{{item.orgName}}</text>
+          </view>
           <view class="dropdown-check" wx:if="{{item.active}}"></view>
         </view>
       </view>
@@ -46,8 +51,8 @@
 
     <view class="card" bindtap="goToAR">
       <view class="card-content">
-        <text class="card-title">开启旅程</text>
-        <text class="card-desc">探索 AR 景观与互动体验</text>
+        <text class="card-title">{{isScene ? '预览场景' : '开启旅程'}}</text>
+        <text class="card-desc">{{isScene ? '进入后点击按钮，将场景放置在前方' : '探索 AR 景观与互动体验'}}</text>
       </view>
       <view class="card-action">
         <view class="arrow"></view>

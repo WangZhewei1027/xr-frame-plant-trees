@@ -46,6 +46,7 @@ function makeWx(extra = {}) {
       });
       return canvas;
     },
+    showToast() {},
     showModal(options) {
       (this.modals = this.modals || []).push(options);
     },
@@ -178,15 +179,16 @@ function fakeCache(THREE, { failing = new Set(), defer = false } = {}) {
 }
 
 async function main() {
-  // QR dispatch must not touch the map selection, history or location workflow.
+  // QR dispatch caches the Scene target without starting map or location requests.
   {
     const sceneId = "8a5219f1-a635-46f7-9b3e-70d7c02ec63a";
     const organizationId = "512301ab-2679-4350-81e1-520a3ab2afd4";
     let redirected, retried = false;
     const loader = makeLoader(makeWx({
-      redirectTo: ({ url }) => { redirected = url; },
+      navigateTo: ({ url }) => { redirected = url; },
+      getDeviceInfo: () => ({ platform: "devtools" }),
       getSystemInfoSync: () => ({ windowWidth: 390, windowHeight: 753, pixelRatio: 3 }),
-    }), { "utils/backend.ts": { setConfig() { throw new Error("QR changed map config"); } } });
+    }));
     const mount = () => ({ ...loader.context.page, data: { ...loader.context.page.data },
       setData(patch) { Object.assign(this.data, patch); } });
     loader.load(path.join(root, "pages/index/index.ts"));
@@ -197,14 +199,20 @@ async function main() {
     const invalid = mount(); invalid.onLoad({ sceneId: "invalid", organizationId });
     assert.equal(invalid.data.invalid, true); assert.equal(invalid.data.sceneId, "");
     const page = mount(); page.onLoad({ sceneId, organizationId });
-    assert.equal(page.data.sceneId, sceneId); assert.equal(page.data.renderHeight, 950);
+    assert.equal(page.data.sceneId, sceneId); assert.equal(page.data.renderHeight, 1130);
+    assert.equal(page.data.height, 753, "Scene canvas fills the page without a footer");
     page.onRenderStatus({ detail: { state: "error", message: "相机权限未开启" } });
     assert.equal(page.data.state, "error"); assert.equal(page.data.message, "相机权限未开启");
     page.selectComponent = () => ({ retryScenePreview() { retried = true; } });
     page.retry(); assert.equal(retried, true);
+    let placed = 0;
+    page.selectComponent = () => ({ placeScenePreview() { placed++; } });
+    page.onSceneStatus({ detail: { state: "placeable", message: "" } });
+    page.place(); assert.equal(placed, 1);
     page.onSceneStatus({ detail: { state: "ready", message: "轻触场景" } });
     assert.equal(page.data.state, "ready");
-    console.log("PASS QR entry: isolated map config, valid parameters, AR error and retry");
+    page.place(); assert.equal(placed, 1, "placed Scene has no second placement action");
+    console.log("PASS QR entry: no map/location requests, valid parameters, AR error and retry");
   }
   const wx = makeWx();
   const { load, lib } = makeLoader(wx);
@@ -430,23 +438,38 @@ async function main() {
       getCamTransform: () => camera, triggerEvent: (_, detail) => states.push(detail),
     };
     let now = 0;
-    const tick = (frames) => { for (let i = 0; i < frames; i++) host._tickScenePreview(0.1, now += 100); };
+    const tick = (frames) => { for (let i = 0; i < frames; i++) host._tickScenePreview(now += 100); };
     await host._beginScenePreview();
     assert.deepEqual(calls[0], ["dance", "team"]);
-    tick(20); assert.equal(host.nodeList.length, 0, "never display before 2 seconds of valid camera frames");
+    assert.equal(host.placeScenePreview(now), false, "no placement before a valid camera frame");
+    tick(100); assert.equal(host.nodeList.length, 0, "waiting ten seconds never places automatically");
+    assert.equal(states.at(-1).state, "placeable");
     camera.position.x = 9;
-    tick(1); assert.equal(host.nodeList.length, 1);
+    assert.equal(host.placeScenePreview(now), true);
+    assert.equal(host.nodeList.length, 1);
     near(host.nodeList[0].node.position.x, 9, "placement uses the camera at display time");
     near(host.nodeList[0].node.position.y, 1.6); near(host.nodeList[0].node.position.z, -2);
-    tick(20); assert.equal(host.nodeList.length, 1, "mount only once");
+    tick(20); assert.equal(host.placeScenePreview(now), false);
+    assert.equal(host.nodeList.length, 1, "rapid/repeated clicks mount only once");
     host._destroyNode(host.nodeList[0]); host.nodeList = [];
     assert.equal(cache.stats.live, 0);
 
-    await host._beginScenePreview(); tick(19);
-    now += 1000; tick(1); tick(19);
-    assert.equal(host.nodeList.length, 0, "tracking gap restarts stability window");
-    tick(1); assert.equal(host.nodeList.length, 1);
+    await host._beginScenePreview(); tick(1);
+    now += 1000;
+    assert.equal(host.placeScenePreview(now), false, "tracking gap rejects stale camera pose");
+    assert.equal(host.nodeList.length, 0);
+    assert.equal(states.at(-1).state, "tracking");
+    tick(1);
+    assert.equal(host.placeScenePreview(now), true, "one new valid frame suffices; no two-second delay");
+    assert.equal(host.nodeList.length, 1);
     host._destroyNode(host.nodeList[0]); host.nodeList = [];
+
+    await host._beginScenePreview(); tick(1);
+    assert.equal(cache.stats.live, 2, "loaded Scene waits off-stage for a click");
+    host._retrievalPaused = true; host._cancelScenePreview(); host._contentEpoch++;
+    assert.equal(cache.stats.live, 0, "leaving before placement releases the loaded Scene");
+    assert.equal(host.placeScenePreview(now), false);
+    host._retrievalPaused = false;
 
     let finish;
     pending = new Promise(resolve => { finish = resolve; });
@@ -458,7 +481,8 @@ async function main() {
     const delayed = fakeCache(T, { defer: true }); host._modelCache = delayed;
     const loading = host._beginScenePreview();
     await until(() => delayed.stats.acquires === 2, "preview model load");
-    tick(30); assert.equal(host.nodeList.length, 0, "AR readiness alone cannot reveal unloaded models");
+    tick(30); assert.equal(host.placeScenePreview(now), false);
+    assert.equal(host.nodeList.length, 0, "clicking cannot reveal unloaded models");
     host._cancelScenePreview(); host._contentEpoch++; delayed.resolvePending(); await loading;
     assert.equal(delayed.stats.live, 0, "late model handles are released after cancel");
     host._modelCache = cache;
@@ -467,13 +491,18 @@ async function main() {
     response = { statusCode: 200, data: compositionManifest({ instances: [] }) };
     await host._beginScenePreview(); assert.equal(states.at(-1).state, "empty");
     response = { statusCode: 200, data: compositionManifest() };
-    await host._beginScenePreview(); tick(21); assert.equal(states.at(-1).state, "ready", "retry works after error and empty content");
+    await host._beginScenePreview(); tick(1);
+    assert.equal(states.at(-1).state, "placeable");
+    host._retrievalPaused = true; assert.equal(host.placeScenePreview(now), false);
+    host._retrievalPaused = false;
+    assert.equal(host.placeScenePreview(now), true);
+    assert.equal(states.at(-1).state, "ready", "retry requires a new click after error or empty content");
     for (const entry of host.nodeList) host._destroyNode(entry);
     host._cancelScenePreview(); assert.equal(cache.stats.live, 0);
     let restartedAR = false;
     host._arReady = false; host.retryAR = () => { restartedAR = true; };
     host.retryScenePreview(); assert.equal(restartedAR, true, "retry starts AR again when initialization failed");
-    console.log("PASS QR scene: stable 2 seconds, latest camera, single mount, tracking gaps, background cancellation, slow models, errors and retry");
+    console.log("PASS QR scene: manual placement, latest camera, single mount, tracking gaps, background cancellation, slow models, errors and retry");
   }
 
   // Real queue integration: same registry, tick, tap, capacity and clearing as other assets.
