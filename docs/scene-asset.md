@@ -23,9 +23,9 @@ GPS、巨大模型、商户及识别点接口返回地图 Placement，返回值�
 
 运行时只接收 `schemaVersion: 4` 的 composition manifest；后端将 schema 6 编辑文档编译为此协议，不是资产内容版本。最多 8 个资源、24 个实例、2400 关键帧、600 秒。实例独立克隆，使用米制 `position`、Euler XYZ 弧度 `rotation` 和 `scale`，不归一化尺寸。Web 旋转字段显示度，保存与两端采样使用弧度并保留多圈值。
 
-`lib/scene-runtime/composition.js` 使用与 Web 同源的零依赖 `@spatial-memory/scene-core` 2.0.0。每实例可选 `tracks` 保存 9 个变换通道的数值关键帧：`{ time, value, handles: [inX, inY, outX, outY], connectedRight }`；time 为秒，`connectedRight: false` 表示保持到下一关键帧，其余使用左右相邻帧的 Bezier 出/入柄采样。没有轨道时使用静态姿态。GLB 动画继续由 Three.AnimationMixer 求值。每个播放器持有独立 Core，`dispose` 清空订阅、绑定与内容引用；宿主释放模型和帧时钟。暂停不推进时间；循环保留跨边界余量；结束冻结；轻触场景暂停/继续或重播。整场登记一个 `nodeList` 条目，容量桶最多 1 场，替换时整场回收。实例不参与普通素材斥力。任一资源或动画片段失败会释放整场，不显示残缺场景。
+`lib/scene-runtime/composition.js` 使用与 Web 同源的零依赖 `@spatial-memory/scene-core` 2.1.0。schema 5 清单可带 `groups`：分组是带变换和轨道的空 `THREE.Group`，实例和子分组按 `parent` 挂到对应分组下，Core 用同一时钟采样分组与实例；schema 4 平铺清单从不构建分组。每实例可选 `tracks` 保存 9 个变换通道的数值关键帧：`{ time, value, handles: [inX, inY, outX, outY], connectedRight }`；time 为秒，`connectedRight: false` 表示保持到下一关键帧，其余使用左右相邻帧的 Bezier 出/入柄采样。没有轨道时使用静态姿态。GLB 动画继续由 Three.AnimationMixer 求值。每个播放器持有独立 Core，`dispose` 清空订阅、绑定与内容引用；宿主释放模型和帧时钟。暂停不推进时间；循环保留跨边界余量；结束冻结；轻触场景暂停/继续或重播。整场登记一个 `nodeList` 条目，容量桶最多 1 场，替换时整场回收。实例不参与普通素材斥力。任一资源或动画片段失败会释放整场，不显示残缺场景。
 
-Core 提供 `play/pause/seek/advance/sync/sample/subscribe/observe/bind/dispose`，不依赖 DOM、全局 RAF、定时器或项目注册表。当前提交的压缩 bundle 为 2461 字节；`miniprogram/lib/scene-runtime/vendor/build-info.json` 记录版本和源码哈希。更新 npm pack 快照及构建步骤见相邻 Web 仓库 `packages/scene-core/README.md`。旧 schema 4/5 编辑文档与 Theatre 状态只在后端标准数据库迁移中转换和归档，小程序没有旧协议运行时分支。
+Core 提供 `play/pause/seek/advance/sync/sample/subscribe/observe/bind/dispose`，不依赖 DOM、全局 RAF、定时器或项目注册表。当前提交的压缩 bundle 为 2459 字节；`miniprogram/lib/scene-runtime/vendor/build-info.json` 记录版本和源码哈希。更新 npm pack 快照及构建步骤见相邻 Web 仓库 `packages/scene-core/README.md`。旧 schema 4/5 编辑文档与 Theatre 状态只在后端标准数据库迁移中转换和归档，小程序没有旧协议运行时分支。
 
 `npm test` 覆盖实际 Three 播放器、地图队列、手动放置、重复点击、跟踪间断、后台取消、异步资源释放和错误重试。开发者工具的无相机联调见 [场景自动联调](scene-auto-debug.md)；VisionKit 相机追踪及实际放置效果需真机验证。
 

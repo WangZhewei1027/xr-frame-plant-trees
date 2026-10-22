@@ -29,6 +29,6 @@
     "three": "0.186.1"
   },
   "dependencies": {
-    "@spatial-memory/scene-core": "file:vendor/spatial-memory-scene-core-2.0.0.tgz"
+    "@spatial-memory/scene-core": "file:vendor/spatial-memory-scene-core-2.1.0.tgz"
   }
 }

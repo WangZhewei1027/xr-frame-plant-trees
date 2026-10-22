@@ -1,5 +1,5 @@
 // composition 播放器（scene asset）：GLB 编排 + 统一时间轴。
-//   结构：sceneRoot(root，由宿主放置) → instanceRoot（JSON 变换） → GLB 子树（ModelCache clone）
+//   结构：sceneRoot(root，由宿主放置) → [groupRoot（schema 5 分组变换，可嵌套）] → instanceRoot（JSON 变换） → GLB 子树（ModelCache clone）
 //   每个实例独立 acquire 一份 ModelCache 句柄（cloneSkinned 副本），dispose 时逐个 release。
 //   不归一化尺寸、不读 scale_multiplier；只应用 position/rotation/scale。
 const { THREE } = require("../three-runtime/runtime");
@@ -45,6 +45,8 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
   root.name = `scene:${(manifest && manifest.assetId) || ""}`;
   // instances: { id, alias, instanceRoot, object, handle, mixer, action }
   const instances = [];
+  // groups: id → THREE.Group；分组只是变换父节点，不渲染任何内容
+  const groups = new Map();
   // animated: 每帧驯动的扁平数组，避免 tick 内分配
   const animated = [];
   let core = null;
@@ -133,6 +135,7 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
     // disposeTree 跳过 sharedModel 子树的几何/材质（缓存所有），只清骨架。
     disposeTree(root);
     root.clear();
+    groups.clear();
     const handles = instances.map((inst) => inst.handle);
     instances.length = 0;
     animated.length = 0;
@@ -161,7 +164,8 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
     setState("loading");
     const acquired = [];
     try {
-      if (manifest?.schemaVersion !== 4 || !content || content.kind !== "composition")
+      const version = manifest && manifest.schemaVersion;
+      if ((version !== 4 && version !== 5) || !content || content.kind !== "composition")
         throw tagError(new Error("场景内容不是 composition"), {
           kind: "protocol",
         });
@@ -207,6 +211,18 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
       }
       const failed = results.find((result) => result.status === "rejected");
       if (failed) throw failed.reason;
+      // 分组（schema 5）：先建全部节点再挂父子，父分组可能排在子分组之后
+      const groupList = version === 5 && Array.isArray(content.groups) ? content.groups : [];
+      for (const group of groupList) {
+        const groupRoot = new THREE.Group();
+        groupRoot.name = `group:${group.id}`;
+        groupRoot.position.fromArray(group.position);
+        groupRoot.rotation.set(...group.rotation, 'XYZ');
+        groupRoot.scale.fromArray(group.scale);
+        groups.set(group.id, groupRoot);
+      }
+      for (const group of groupList)
+        (groups.get(group.parent) || root).add(groups.get(group.id));
       // 第一阶段：先让每个句柄都归属一个实例（后续任何抛错都由 teardownBuilt 统一释放，不漏句柄）
       for (const result of results) {
         const { handle, inst, alias } = result.value;
@@ -216,7 +232,7 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
         instanceRoot.rotation.set(...inst.rotation, 'XYZ');
         instanceRoot.scale.fromArray(inst.scale);
         instanceRoot.add(handle.object);
-        root.add(instanceRoot);
+        (groups.get(inst.parent) || root).add(instanceRoot);
         instances.push({
           id: inst.id,
           alias,
@@ -275,6 +291,7 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
       if (disposed || generation !== loadGeneration) { loadedCore.dispose(); return; }
       core = loadedCore;
       for (const entry of instances) unbind.push(core.bind(entry.id, entry.instanceRoot));
+      for (const [id, groupRoot] of groups) unbind.push(core.bind(id, groupRoot));
       core.seek(0);
       t = 0;
       evaluate(0);

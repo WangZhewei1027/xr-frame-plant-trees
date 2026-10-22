@@ -354,6 +354,38 @@ async function main() {
     console.log("PASS native Core transform tracks, clip coexistence, pause/end/restart and cleanup");
   }
 
+  // Schema 5 groups are animated transform parents; members keep local transforms.
+  {
+    const cache = fakeCache(THREE);
+    const manifest = compositionManifest({ durationSeconds: 4 });
+    manifest.schemaVersion = 5;
+    manifest.content.groups = [
+      { id: "rig", name: "Rig", position: [0, 1, 0], rotation: [0, 0, 0], scale: [2, 2, 2],
+        tracks: { "position.x": [
+          { time: 0, value: 0, handles: [0.5, 0.5, 0.5, 0.5], connectedRight: true },
+          { time: 4, value: 4, handles: [0.5, 0.5, 0.5, 0.5], connectedRight: false },
+        ] } },
+      { id: "inner", name: "Inner", parent: "rig", position: [0, 0, 1], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    ];
+    manifest.content.instances[0].parent = "inner";
+    const player = createCompositionPlayer(manifest, { modelCache: cache });
+    await player.load(); assert.equal(player.state, "ready");
+    player.play(); player.update(2);
+    const left = player.instances[0].instanceRoot, right = player.instances[1].instanceRoot;
+    assert.equal(left.parent.name, "group:inner"); assert.equal(left.parent.parent.name, "group:rig");
+    assert.equal(right.parent, player.root, "members without a parent stay at the scene root");
+    left.updateWorldMatrix(true, false);
+    const world = new THREE.Vector3().setFromMatrixPosition(left.matrixWorld);
+    near(world.x, 2 + -1 * 2, "group curve moves members", 1e-6);
+    near(world.z, 2, "nested group offset is scaled by its parent", 1e-6);
+    player.dispose(); assert.equal(cache.stats.live, 0);
+    const flat = compositionManifest(); flat.content.groups = manifest.content.groups;
+    const ignored = createCompositionPlayer(flat, { modelCache: fakeCache(THREE) });
+    await ignored.load(); assert.equal(ignored.instances[0].instanceRoot.parent, ignored.root, "schema 4 never builds groups");
+    ignored.dispose();
+    console.log("PASS schema 5 nested animated groups and flat schema 4 compatibility");
+  }
+
   // ── 3. load failure / cancellation release every handle ────────────────
   {
     const cache = fakeCache(THREE, { failing: new Set([STAGE.url]) });

@@ -19,8 +19,8 @@ flowchart LR
   Render --> Controls[播放画面与暂停、重播、清场]
 ```
 
-- Scene 是团队场景，schema 6 编排 JSON 保存在 `scene.document`，接口编译为播放 schema 4；模型作为团队基础 Asset，被场景按 ID 引用。保存直接生效，不需要发布。
-- Web 直接在同一 DOM 中呈现 Three.js Editor 原生视口、应用属性/时间轴和统一撤销历史。实例 position/rotation/scale 的 9 个数值通道由两端同源 Scene Core 2.0.0 采样；旋转界面显示度，协议为 Euler XYZ 弧度，GLB 内置动画继续交给 Three.AnimationMixer。
+- Scene 是团队场景，schema 6 编排 JSON 保存在 `scene.document`，接口编译为播放 schema 4（无分组）或 schema 5（有分组）；模型作为团队基础 Asset，被场景按 ID 引用。保存直接生效，不需要发布。
+- Web 直接在同一 DOM 中呈现 Three.js Editor 原生视口、应用属性/时间轴和统一撤销历史。实例 position/rotation/scale 的 9 个数值通道由两端同源 Scene Core 2.1.0 采样（分组节点同样采样）；旋转界面显示度，协议为 Euler XYZ 弧度，GLB 内置动画继续交给 Three.AnimationMixer。
 - 场景接口按当前数据解析模型 URL；使用与场景同一团队的模型。协议与正式 AR 接入见 [Scene 素材播放](scene-asset.md)。
 - 小程序通过 HTTP 接口访问后端，不直接连接数据库。素材可能仍从 OSS 下载；使用本地数据库不代表所有媒体都已离线。
 - 联调页路径为 `labs/xr-three/scene-preview`。它使用模拟相机，跳过 VisionKit；复用正式代码中的 `fetchScenePreview`、`ModelCache` 和 `createCompositionPlayer`。
