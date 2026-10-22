@@ -28,13 +28,13 @@ function verifyScenePlayer(player, manifest, cache) {
   assert(near(player.time, paused + step), "继续播放不跳帧");
   // Check exact saved keyframes (not a second copy of the curve evaluator).
   for (const entry of player.instances) {
-    for (const [channel, frames] of Object.entries(entry.inst.tracks || {})) {
-      const [group, axis] = channel.split(".");
+    for (const [path, frames] of Object.entries(entry.inst.tracks || {})) {
+      const [group, axis] = path.split(".");
       for (const frame of frames) {
-        if (manifest.content.loop && frame.time === player.duration) continue;
+        if (frame.time > player.duration || (manifest.content.loop && frame.time === player.duration)) continue;
         player.restart();
         player.update(frame.time);
-        assert(near(entry.instanceRoot[group][axis], frame.value), `${entry.id} ${channel} @${frame.time}s 与保存值一致`);
+        assert(near(entry.instanceRoot[group][axis], frame.value), `${entry.id} ${group}.${axis} @${frame.time}s 与保存值一致`);
       }
     }
     if (entry.action && entry.inst.animation.startSeconds > 0) {

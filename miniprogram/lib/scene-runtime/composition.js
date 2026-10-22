@@ -1,9 +1,9 @@
 // composition 播放器（scene asset）：GLB 编排 + 统一时间轴。
 //   结构：sceneRoot(root，由宿主放置) → instanceRoot（JSON 变换） → GLB 子树（ModelCache clone）
 //   每个实例独立 acquire 一份 ModelCache 句柄（cloneSkinned 副本），dispose 时逐个 release。
-//   不归一化尺寸、不读 scale_multiplier；只应用 position/quaternion/scale。
+//   不归一化尺寸、不读 scale_multiplier；只应用 position/rotation/scale。
 const { THREE } = require("../three-runtime/runtime");
-const { applyTransformTracks } = require("./transform-tracks");
+const { createSceneCore, clipTime: coreClipTime } = require("./vendor/scene-core");
 const { disposeTree } = require("../three-runtime/resources");
 
 /**
@@ -13,9 +13,7 @@ const { disposeTree } = require("../three-runtime/resources");
  *   非 loop          → 超过 clip 时长后钉在末帧
  */
 function clipTime(local, clipDuration, loop) {
-  if (!(local > 0) || !(clipDuration > 0)) return 0;
-  if (loop) return local % clipDuration;
-  return local < clipDuration ? local : clipDuration;
+  return coreClipTime(local, { startSeconds: 0, loop }, clipDuration);
 }
 
 /** clipIndex / clipName 二选一；clipName 只在文件内唯一时有效。 */
@@ -49,6 +47,8 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
   const instances = [];
   // animated: 每帧驯动的扁平数组，避免 tick 内分配
   const animated = [];
+  let core = null;
+  const unbind = [];
   const duration =
     content &&
     Number.isFinite(content.durationSeconds) &&
@@ -119,6 +119,8 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
 
   /** 释放已经构建出来的实例（mixer → 子树 → 句柄），保持 root 为空。 */
   function teardownBuilt() {
+    unbind.splice(0).forEach((stop) => stop());
+    core?.dispose(); core = null;
     for (const inst of instances) {
       if (inst.mixer) {
         try {
@@ -159,7 +161,7 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
     setState("loading");
     const acquired = [];
     try {
-      if (!content || content.kind !== "composition")
+      if (manifest?.schemaVersion !== 4 || !content || content.kind !== "composition")
         throw tagError(new Error("场景内容不是 composition"), {
           kind: "protocol",
         });
@@ -211,7 +213,7 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
         const instanceRoot = new THREE.Group();
         instanceRoot.name = `instance:${inst.id}`;
         instanceRoot.position.fromArray(inst.position);
-        instanceRoot.quaternion.fromArray(inst.quaternion);
+        instanceRoot.rotation.set(...inst.rotation, 'XYZ');
         instanceRoot.scale.fromArray(inst.scale);
         instanceRoot.add(handle.object);
         root.add(instanceRoot);
@@ -269,6 +271,11 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
           lastClip: -1,
         });
       }
+      const loadedCore = await createSceneCore({ content });
+      if (disposed || generation !== loadGeneration) { loadedCore.dispose(); return; }
+      core = loadedCore;
+      for (const entry of instances) unbind.push(core.bind(entry.id, entry.instanceRoot));
+      core.seek(0);
       t = 0;
       evaluate(0);
       setState("ready");
@@ -286,9 +293,6 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
    * 暂停/恢复不会跳时，LoopOnce 结束后也不会被 mixer.setTime 重置回第 0 帧。
    */
   function evaluate(time) {
-    for (const entry of instances) {
-      if (entry.inst.tracks) applyTransformTracks(entry.instanceRoot, entry.inst.tracks, time);
-    }
     for (let i = 0; i < animated.length; i++) {
       const a = animated[i];
       const clip = clipTime(time - a.startSeconds, a.clipDuration, a.loop);
@@ -299,41 +303,28 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
     }
   }
 
-  function play() {
-    if (state === "ready") {
-      t = 0;
-      setState("playing");
-    } else if (state === "paused") setState("playing");
-  }
-
-  function pause() {
-    if (state === "playing") setState("paused");
-  }
-
-  function restart() {
-    if (
-      state !== "ready" &&
-      state !== "playing" &&
-      state !== "paused" &&
-      state !== "ended"
-    )
-      return;
-    t = 0;
-    evaluate(0);
+  function startCore() {
+    core.play(sceneLoop);
     setState("playing");
   }
-
+  function play() {
+    if (!core) return;
+    if (state === "ready") { core.seek(0); t = 0; startCore(); }
+    else if (state === "paused") startCore();
+  }
+  function pause() {
+    if (state === "playing") { core.pause(); setState("paused"); }
+  }
+  function restart() {
+    if (!core || !["ready", "playing", "paused", "ended"].includes(state)) return;
+    core.seek(0); t = 0; evaluate(0); startCore();
+  }
   function update(dt) {
     if (state !== "playing" || !(dt > 0) || !Number.isFinite(dt)) return;
-    t += dt;
-    if (duration !== null && t >= duration) {
-      // Preserve elapsed time across loop boundaries; non-looping scenes hold the final pose.
-      t = sceneLoop ? t % duration : duration;
-      evaluate(t);
-      if (!sceneLoop) setState("ended");
-      return;
-    }
+    core.advance(dt);
+    t = core.time;
     evaluate(t);
+    if (!sceneLoop && duration !== null && t >= duration) setState("ended");
   }
 
   function dispose() {

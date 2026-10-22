@@ -65,7 +65,7 @@ const wx = {
   },
 };
 const context = vm.createContext({
-  console: { log() {}, warn() {}, error: console.error },
+  console: { ...console, log() {}, warn() {}, error: console.error },
   setTimeout,
   clearTimeout,
   wx,

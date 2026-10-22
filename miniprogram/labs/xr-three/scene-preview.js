@@ -3,13 +3,17 @@ const { ModelCache, disposeTree } = require("../../lib/three-runtime/resources")
 const { createCompositionPlayer } = require("../../lib/scene-runtime/composition");
 const { fetchScenePreview } = require("../../utils/backend");
 const { verifyScenePlayer } = require("./scene-checks");
+const { stressScene } = require("./scene-stress");
 
 Page({
   data: { enabled: false, sceneId: "", organizationId: "", busy: false, loaded: false, status: "初始化…", report: "", playback: "" },
   onLoad(options) {
     this._generation = 0;
+    this._frameGeneration = 0;
+    this._reloadOnShow = false;
     this._active = true;
     this._enabled = wx.getAccountInfoSync().miniProgram.envVersion === "develop";
+    this._stressCycles = Math.min(500, Math.max(0, Number(options.stressCycles) || 0));
     this.setData({ enabled: this._enabled, sceneId: options.sceneId || "", organizationId: options.organizationId || "",
       status: this._enabled ? "等待 WebGL2" : "此页面仅允许开发版使用" });
   },
@@ -37,7 +41,9 @@ Page({
         this._cache = new ModelCache(canvas);
         this.setData({ status: `Three.js r${THREE.REVISION} 就绪` });
         this.startFrames();
-        if (this.data.sceneId && this.data.organizationId) this.loadScene();
+        if (this.data.sceneId && this.data.organizationId) {
+          if (this._stressCycles) this.runStress(this._stressCycles); else this.loadScene();
+        }
       } catch (error) { this.fail(error); }
     });
   },
@@ -45,6 +51,7 @@ Page({
   onOrganizationInput(event) { this.setData({ organizationId: event.detail.value.trim() }); },
   async loadScene() {
     if (!this._enabled || !this._cache || this.data.busy || !this._active) return;
+    this._reloadOnShow = false;
     const { sceneId, organizationId } = this.data;
     if (![sceneId, organizationId].every((id) => /^[0-9a-f-]{36}$/i.test(id))) {
       this.setData({ status: "请填写场景和工作空间 UUID" }); return;
@@ -85,11 +92,13 @@ Page({
   },
   startFrames() {
     if (!this._canvas || this._raf != null || !this._active || this._dead) return;
+    const generation = this._frameGeneration;
     this._lastFrame = null;
+    this._lastStatus = null;
     const frame = (time) => {
+      if (generation !== this._frameGeneration || !this._active || this._dead) return;
       this._raf = null;
-      if (!this._active || this._dead) return;
-      const dt = this._lastFrame == null ? 0 : Math.min((time - this._lastFrame) / 1000, 0.1);
+      const dt = this._lastFrame == null ? 0 : Math.max(0, Math.min((time - this._lastFrame) / 1000, 0.1));
       this._lastFrame = time;
       if (!this.data.busy) this._player?.update(dt);
       this._renderer.render(this._scene, this._camera);
@@ -101,7 +110,12 @@ Page({
     };
     this._raf = this._canvas.requestAnimationFrame(frame);
   },
-  stopFrames() { if (this._raf != null) this._canvas.cancelAnimationFrame(this._raf); this._raf = null; },
+  stopFrames() {
+    this._frameGeneration++;
+    if (this._raf != null) this._canvas.cancelAnimationFrame(this._raf);
+    this._raf = null;
+    this._lastFrame = null;
+  },
   togglePlayback() {
     if (this.data.busy) return;
     const player = this._player;
@@ -110,6 +124,26 @@ Page({
     else player?.play();
   },
   restart() { if (!this.data.busy) this._player?.restart(); },
+  async runStress(cycles = 100) {
+    if (!this._enabled || !this._cache || this.data.busy || !this._active) return;
+    this._reloadOnShow = false;
+    this.clearScene();
+    const generation = this._generation;
+    this.setData({ busy: true, status: '正在循环加载、播放并退出场景…', report: '' });
+    try {
+      const response = await fetchScenePreview(this.data.sceneId, this.data.organizationId);
+      if (response.statusCode !== 200) throw new Error(response.data?.error || '读取场景失败');
+      const report = await stressScene({ manifest: response.data, cache: this._cache, scene: this._scene, renderer: this._renderer, camera: this._camera,
+        cycles: typeof cycles === 'number' ? Math.max(1, Math.min(500, cycles)) : 100,
+        cancelled: () => this._dead || !this._active || generation !== this._generation,
+        progress: (count) => { if (count % 10 === 0) this.setData({ status: `循环验收 ${count} 次…` }); },
+      });
+      const device = wx.getSystemInfoSync();
+      console.log('[SceneStress] PASS', { ...report, platform: device.platform, model: device.model, SDKVersion: device.SDKVersion });
+      this.setData({ busy: false, status: `PASS · ${report.cycles} 次加载/播放/退出`, report: JSON.stringify(report, null, 2) });
+      return report;
+    } catch (error) { if (!this._dead && generation === this._generation) this.fail(error); }
+  },
   clearScene() {
     this._generation++;
     if (this._player) { this._scene?.remove(this._player.root); this._player.dispose(); this._player = null; }
@@ -117,8 +151,23 @@ Page({
   },
   fail(error) { this.setData({ busy: false, status: `FAIL · ${error.message}` }); console.error("[ScenePreview] FAIL", error); },
   onContextLost() { this.stopFrames(); this.clearScene(); this.fail(new Error("WebGL 上下文丢失，请重新编译")); },
-  onHide() { this._active = false; this.stopFrames(); this.clearScene(); },
-  onShow() { this._active = true; this.startFrames(); },
+  onHide() {
+    // Hiding releases the player; remember to create a fresh one when returning.
+    // Explicitly clearing an idle scene should still leave it empty.
+    this._reloadOnShow = this._reloadOnShow || !!this._player || this.data.busy || !this._cache;
+    this._active = false;
+    this.stopFrames();
+    this.clearScene();
+  },
+  onShow() {
+    if (this._dead) return;
+    this._active = true;
+    this.startFrames();
+    if (this._reloadOnShow && this._cache) {
+      this._reloadOnShow = false;
+      if (this._stressCycles) this.runStress(this._stressCycles); else this.loadScene();
+    }
+  },
   onUnload() {
     this._dead = true; this._active = false; this.stopFrames(); this.clearScene();
     this._cache?.dispose(); disposeTree(this._scene); this._renderer?.dispose();

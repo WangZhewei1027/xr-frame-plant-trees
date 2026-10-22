@@ -15,7 +15,9 @@
     "test:scan-config": "node scripts/test-scan-config.cjs",
     "test:scene-asset": "node scripts/test-scene-asset.cjs",
     "scene:preview": "node scripts/prepare-scene-preview.cjs",
-    "test:scene-preview": "node scripts/test-scene-preview.cjs"
+    "test:scene-preview": "node scripts/test-scene-preview.cjs",
+    "build:scene-core": "node scripts/build-scene-core.cjs",
+    "test:scene-memory": "node --expose-gc scripts/test-scene-memory.cjs"
   },
   "keywords": [],
   "author": "",
@@ -25,5 +27,8 @@
     "esbuild": "0.28.2",
     "miniprogram-api-typings": "^2.8.3-1",
     "three": "0.186.1"
+  },
+  "dependencies": {
+    "@spatial-memory/scene-core": "file:vendor/spatial-memory-scene-core-2.0.0.tgz"
   }
 }

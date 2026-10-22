@@ -19,7 +19,8 @@ flowchart LR
   Render --> Controls[播放画面与暂停、重播、清场]
 ```
 
-- Scene 是团队场景，编排 JSON 保存在 `scene.document`；模型作为团队基础 Asset，被场景按 ID 引用。保存直接生效，不需要发布。
+- Scene 是团队场景，schema 6 编排 JSON 保存在 `scene.document`，接口编译为播放 schema 4；模型作为团队基础 Asset，被场景按 ID 引用。保存直接生效，不需要发布。
+- Web 直接在同一 DOM 中呈现 Three.js Editor 原生视口、应用属性/时间轴和统一撤销历史。实例 position/rotation/scale 的 9 个数值通道由两端同源 Scene Core 2.0.0 采样；旋转界面显示度，协议为 Euler XYZ 弧度，GLB 内置动画继续交给 Three.AnimationMixer。
 - 场景接口按当前数据解析模型 URL；使用与场景同一团队的模型。协议与正式 AR 接入见 [Scene 素材播放](scene-asset.md)。
 - 小程序通过 HTTP 接口访问后端，不直接连接数据库。素材可能仍从 OSS 下载；使用本地数据库不代表所有媒体都已离线。
 - 联调页路径为 `labs/xr-three/scene-preview`。它使用模拟相机，跳过 VisionKit；复用正式代码中的 `fetchScenePreview`、`ModelCache` 和 `createCompositionPlayer`。
@@ -321,3 +322,55 @@ npm run scene:preview -- d6fe703f-5b43-41a7-b25e-53ea690b2d8d 02212116-256b-4b60
 | [backend-environment.ts](../miniprogram/utils/backend-environment.ts) | 模拟器、真机开发、体验版和正式版地址选择 |
 | [sync-dev-backend.cjs](../scripts/sync-dev-backend.cjs) | 电脑网卡检测与本机地址文件生成 |
 | [sync-dev-backend.sh](../scripts/sync-dev-backend.sh) | 开发者工具执行脚本时定位 Node.js |
+
+
+## 2026-10-20 历史电脑模拟验收（协议 3）
+
+以下为切换到共享变换 Core 前的历史记录，不是当前 schema 4 的模拟器重跑结果。该轮 Web 使用 Three 0.183.2，小程序 Three r186，开发者工具基础库 3.17.4；真机 AR 未验收。旧项目注册表和 iframe 生命周期已退出当前实现。
+
+| 检查 | 结果 |
+|---|---|
+| 共享 Core 内存 | 220 次加载/播放/释放，每场 8 实例、1200 关键帧；强制 GC 后堆 6.18–6.24 MiB，受检项目与状态残留 0 |
+| 单例对照 | 同规模保留全局 Core 单例时，堆 13.61→83.65 MiB、项目/状态残留 440；每 player 独立模块作用域修复 |
+| 实际 GLB 释放 | 120 次完整 load/play/pause/resume/restart/dispose，播放器、原生状态、克隆及缓存引用无残留 |
+| 模拟器 GPU | 100 次加载/播放/清场，geometry、texture、program、缓存条目始终各 1，活跃引用归零 |
+| 两端播放 | 34 个采样、3303 项比较，最大数值误差 0；覆盖全部 9 个变换通道、曲线/保持、GLB 片段、循环/结束/暂停及并行播放器 |
+| Web iframe 退出 | 10 轮，父窗口快捷键监听器、Portal 节点退出后均为 0；修复 pagehide 未卸载 React 树的问题 |
+| 完整回归 | 小程序 `npm test`、`npm run test:scene-memory`，Web `npm run check`、`test-scene-native.ts`、`test-scene-playback-parity.ts` 通过 |
+
+历史单例对照只用于说明当时的问题；当前内存脚本已改测零依赖 Core，不再提供旧单例模式。当前复测运行小程序 `npm run test:scene-memory`，两端比对在相邻 Web 仓库运行 `npx tsx scripts/test-scene-playback-parity.ts`。
+
+GPU 验收使用既有无相机页和同一正式播放器，给页面 query 增加 `stressCycles=100`：
+
+```sh
+wechatide -c Codex simulator_open_page --project "$PWD" --page labs/xr-three/scene-preview --query 'sceneId=19100000-0000-4000-8000-000000000004&organizationId=19100000-0000-4000-8000-000000000002&stressCycles=100'
+wechatide -c Codex get_simulator_console --project "$PWD" --command 'grep -n SceneStress'
+```
+
+以上 UUID 属于本地测试团队，资源为含节点动画的 GLB fixture。其他环境请替换为已有可编辑场景。页面显示 `PASS · 100 次加载/播放/退出` 且日志有完整计数才算通过。堆数据来自 Node 强制 GC，GPU 数据来自开发者工具；未测手机 RSS 或真实 VisionKit 追踪。
+
+证据目录：`/Users/wangzhewei/.codex/visualizations/2026/10/19/01a154ad-3006-74b0-a293-fb8306341ebd/`，文件 `scene-memory-web.json`、`scene-memory-web.png`、`scene-memory-gpu.jpg`。
+
+
+## 2026-10-20 当前自动验收
+
+本轮用户选择浏览器与自动化播放器验收。微信开发者工具登录已过期，未重新登录或运行本轮模拟器检查；上方历史 GPU 结果不能视为本轮验证。真机 AR、手机 RSS 和相机追踪仍未覆盖。
+
+| 检查 | 结果 |
+|---|---|
+| 协议与包 | 后端文档 6 / 播放 4，Scene Core 2.0.0 零依赖；提交的压缩 bundle 2461 字节 |
+| Web 保存闭环 | 输入旋转 90°、撤销/重做、保存/重开通过；恢复 180° 后再次保存/重开通过；实际小程序 API 返回协议 4，同一保存内容的两端 Core 采样一致 |
+| 迁移采样 | 201 个历史采样，最大旋转误差约 `8.6332e-6` 弧度 |
+| 两端实际播放器 | Web 原生视口适配层与小程序实际 Three/GLTFLoader/AnimationMixer 比对 34 个采样、3303 项矩阵/时间，最大误差 0 |
+| 共享 Core 释放 | 220 次加载/播放/释放，每场 8 实例、1200 关键帧，受检对象残留 0；Node 强制 GC 后堆约 5.05→5.13 MiB |
+| GLB 生命周期 | 小程序 120 次完整播放器生命周期，受检对象及缓存引用残留 0；Web 100 次原生 Editor 加载/移除，受检几何/材质注册表回空 |
+| 数据库迁移 | 原文归档、锁递增、回滚、重复执行和协议约束测试通过 |
+| 回归与界面 | 小程序 `npm test`、内存检查与 Web `npm run check` 通过（Web 15 个既有 lint warning）；Web 桌面/移动截图 finish review 为 `ship` |
+
+当前复测：小程序 `npm test`、`npm run test:scene-memory`；相邻 Web 仓库 `npx tsx scripts/test-scene-core.ts`、`test-transform-migration.ts`（需测试数据库）、`test-three-editor.ts`、`test-scene-playback-parity.ts`。Web 截图在该仓库 `.impeccable/review/desktop.png` 与 `mobile.png`。Node 对象与堆内存结果只代表当前 fixture 和运行环境，不能推导真机内存上限。
+
+### 重新进入页面的回归
+
+联调页曾在 `onHide` 释放播放器，却在 `onShow` 只恢复帧循环，返回后不会恢复场景。现已在返回时重新读取已保存场景并从 0 秒播放；用户主动清场则保持为空。帧循环带独立代次，隐藏前已经排队的回调不能推进新播放器或生成重复循环。
+
+`test-scene-preview.cjs` 通过真实 Page 方法和播放器验证播放中、暂停后、结束后及请求未完成时离开/返回，覆盖时钟重新起算、迟到请求/帧、主动清场和卸载。GPU、Canvas 调度和 HTTP 使用测试替身。`test-scene-asset.cjs` 另验证正式 AR 组件的隐藏/显示、销毁后重新创建，以及真实 ARRuntime 帧时钟和变换求值；这些路径未复现时间未重置的问题，VisionKit 和 GPU 仍使用测试替身。本次 `npm test` 通过，未补做模拟器或真机重现。

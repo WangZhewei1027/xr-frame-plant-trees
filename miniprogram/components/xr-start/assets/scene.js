@@ -5,7 +5,7 @@ const { createCompositionPlayer } = require("../../../lib/scene-runtime/composit
 // One scene placement occupies one queue slot; its model children share its lifetime.
 module.exports = {
   async _loadScenePlayer(asset, manifest) {
-    if (manifest?.schemaVersion !== 2 || manifest.assetId !== asset.id || manifest.content?.kind !== "composition")
+    if (manifest?.schemaVersion !== 4 || manifest.assetId !== asset.id || manifest.content?.kind !== "composition")
       throw new Error("不支持的场景内容");
     if (manifest.content.instances?.length === 0) return null;
     const player = createCompositionPlayer(manifest, { modelCache: this._modelCache });

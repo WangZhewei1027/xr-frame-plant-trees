@@ -57,7 +57,7 @@ function makeWx(extra = {}) {
 /** vm module loader in the style of test-ar-runtime.cjs; `overrides` seed stub modules by relative path. */
 function makeLoader(wx, overrides = {}) {
   const context = vm.createContext({
-    console: { log() {}, warn() {}, error: console.error },
+    console: { ...console, log() {}, warn() {}, error: console.error },
     setTimeout,
     clearTimeout,
     wx,
@@ -114,7 +114,7 @@ const STAGE = {
 };
 function compositionManifest(o = {}) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     assetId: "dance",
     content: {
       kind: "composition",
@@ -127,7 +127,7 @@ function compositionManifest(o = {}) {
           id: "left",
           asset: "dancer",
           position: [-1, 0, 0],
-          quaternion: [0, 0, 0, 1],
+          rotation: [0, 0, 0],
           scale: [1, 1, 1],
           animation: { clipIndex: 0, startSeconds: 0, loop: false },
         },
@@ -135,7 +135,7 @@ function compositionManifest(o = {}) {
           id: "right",
           asset: "dancer",
           position: [1, 0, 0],
-          quaternion: [0, 0, 0, 1],
+          rotation: [0, 0, 0],
           scale: [0.8, 0.8, 0.8],
           animation: { clipName: "move", startSeconds: 3, loop: true },
         },
@@ -307,15 +307,15 @@ async function main() {
     console.log("PASS composition timing: shared resource, startSeconds, hold/loop, end freeze, scene loop, pause/resume, restart");
   }
 
-  // ── 2. static composition never ends ────────────────────────────────────
+  // ── 2. static composition holds its pose ────────────────────────────────────
   {
     const cache = fakeCache(THREE);
     const player = createCompositionPlayer(
       compositionManifest({
-        durationSeconds: null,
+        durationSeconds: 10,
         instances: [
-          { id: "a", asset: "stage", position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1], animation: null },
-          { id: "b", asset: "dancer", position: [0, 0, 1], quaternion: [0, 0, 0, 1], scale: [2, 2, 2], animation: null },
+          { id: "a", asset: "stage", position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: null },
+          { id: "b", asset: "dancer", position: [0, 0, 1], rotation: [0, 0, 0], scale: [2, 2, 2], animation: null },
         ],
       }),
       { modelCache: cache },
@@ -325,22 +325,22 @@ async function main() {
     player.play();
     player.update(1000);
     player.update(1000);
-    assert.equal(player.state, "playing", "durationSeconds=null never reaches ended");
+    assert.equal(player.state, "ended", "static scenes use the same native finite timeline");
     player.dispose();
     assert.equal(cache.stats.releases, 2);
-    console.log("PASS static composition (durationSeconds null) never ends and creates no mixer");
+    console.log("PASS static composition holds its pose and creates no mixer");
   }
 
-  // Version 2 transform curves share the same playhead as GLB clips.
+  // Shared transform curves share the same playhead as GLB clips.
   {
     const cache = fakeCache(THREE);
     const manifest = compositionManifest({ durationSeconds: 4 });
-    manifest.schemaVersion = 2;
+    manifest.schemaVersion = 4;
     const frames = (from, to) => [
       { time: 0, value: from, handles: [0.5, 0.5, 0.5, 0.5], connectedRight: true },
       { time: 4, value: to, handles: [0.5, 0.5, 0.5, 0.5], connectedRight: false },
     ];
-    manifest.content.instances[0].tracks = { "position.x": frames(0, 4), "rotation.y": frames(0, Math.PI), "scale.z": frames(1, 3) };
+    manifest.content.instances[0].tracks = { 'position.x': frames(0, 4), 'rotation.y': frames(0, Math.PI), 'scale.z': frames(1, 3) };
     const player = createCompositionPlayer(manifest, { modelCache: cache });
     await player.load(); player.play(); player.update(2);
     const group = player.instances[0].instanceRoot;
@@ -351,7 +351,7 @@ async function main() {
     player.play(); player.update(2); near(group.position.x, 4, "end frame");
     player.restart(); near(group.position.x, 0, "restart");
     player.dispose(); assert.equal(cache.stats.live, 0);
-    console.log("PASS v2 transform tracks, clip coexistence, pause/end/restart and cleanup");
+    console.log("PASS native Core transform tracks, clip coexistence, pause/end/restart and cleanup");
   }
 
   // ── 3. load failure / cancellation release every handle ────────────────
@@ -361,9 +361,9 @@ async function main() {
     const player = createCompositionPlayer(
       compositionManifest({
         instances: [
-          { id: "left", asset: "dancer", position: [-1, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1], animation: { clipIndex: 0, startSeconds: 0, loop: false } },
-          { id: "right", asset: "dancer", position: [1, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1], animation: { clipIndex: 0, startSeconds: 1, loop: true } },
-          { id: "stage", asset: "stage", position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1], animation: null },
+          { id: "left", asset: "dancer", position: [-1, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: { clipIndex: 0, startSeconds: 0, loop: false } },
+          { id: "right", asset: "dancer", position: [1, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: { clipIndex: 0, startSeconds: 1, loop: true } },
+          { id: "stage", asset: "stage", position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: null },
         ],
       }),
       { modelCache: cache, onState: (state) => states.push(state) },
@@ -390,8 +390,8 @@ async function main() {
     const badClip = createCompositionPlayer(
       compositionManifest({
         instances: [
-          { id: "x", asset: "dancer", position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1], animation: { clipName: "nope", startSeconds: 0, loop: false } },
-          { id: "y", asset: "dancer", position: [0, 0, 0], quaternion: [0, 0, 0, 1], scale: [1, 1, 1], animation: null },
+          { id: "x", asset: "dancer", position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: { clipName: "nope", startSeconds: 0, loop: false } },
+          { id: "y", asset: "dancer", position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: null },
         ],
       }),
       { modelCache: cache },
@@ -505,6 +505,74 @@ async function main() {
     console.log("PASS QR scene: manual placement, latest camera, single mount, tracking gaps, background cancellation, slow models, errors and retry");
   }
 
+  // Real AR component hide/show and detach/re-enter drive the real runtime clock,
+  // composition Core and queue. Only VisionKit/GPU and resource IO are stand-ins.
+  {
+    const manifest = compositionManifest();
+    manifest.content.instances[0].tracks = { "rotation.y": [
+      { time: 0, value: 0, handles: [0, 0, 1, 1], connectedRight: true },
+      { time: 8, value: Math.PI, handles: [0, 0, 1, 1], connectedRight: false },
+    ] };
+    let requests = 0;
+    const loader = makeLoader(makeWx(), { "utils/backend.ts": {
+      CONFIG: {}, fetchScenePreview: async () => { requests++; return { statusCode: 200, data: manifest }; },
+    } });
+    loader.load(path.join(root, "components/xr-start/index.js"));
+    const component = loader.context.component;
+    const { THREE: T } = loader.lib("three-runtime/runtime");
+    const { ARRuntime } = loader.lib("three-runtime/ar-runtime");
+    const nativeCamera = new T.PerspectiveCamera(45, 1, 0.01, 300);
+    nativeCamera.position.set(0, 1.6, 0); nativeCamera.updateMatrixWorld(true);
+    const nativeFrame = { camera: { viewMatrix: nativeCamera.matrixWorldInverse.toArray(),
+      getProjectionMatrix: () => nativeCamera.projectionMatrix.toArray() } };
+    for (let entry = 0; entry < 3; entry++) {
+      const host = { ...component.methods,
+        data: { ...component.data, sceneId: "dance", sceneOrganizationId: "team" },
+        setData(values) { Object.assign(this.data, values); }, triggerEvent() {},
+      };
+      component.lifetimes.attached.call(host);
+      const cache = fakeCache(T);
+      cache.dispose = () => assert.equal(cache.stats.live, 0, "component releases every model before cache disposal");
+      host._modelCache = cache;
+      const runtime = Object.assign(Object.create(ARRuntime.prototype), {
+        canvas: { width: 480, height: 640 }, scene: new T.Scene(), camera: new T.PerspectiveCamera(),
+        content: new T.Group(), reticle: new T.Group(),
+        background: { draw: () => true, dispose() {} },
+        renderer: { render() {}, resetState() {}, dispose() {}, info: { render: {}, memory: {} } },
+        session: { start() {}, stop() {} },
+        onReady: () => host.handleARReady(), onTick: dt => host.handleTick(dt),
+      });
+      runtime.scene.add(runtime.content);
+      host._runtime = runtime; host.scene = runtime.scene; host.shadowRoot = runtime.content;
+      for (const previousState of ["playing", "paused", "ended"]) {
+        component.pageLifetimes.show.call(host);
+        assert.equal(runtime.lastFrameAt, null, "AR restarts its frame clock");
+        runtime.frame(nativeFrame, { now: 10, acquireMs: 0 });
+        await until(() => !!host._scenePreviewPlayer, "foreground scene loaded");
+        const player = host._scenePreviewPlayer;
+        assert.equal(player.time, 0);
+        runtime.frame(nativeFrame, { now: 20, acquireMs: 0 });
+        assert.equal(host.placeScenePreview(), true);
+        assert.equal(player.state, "playing");
+        assert.equal(player.time, 0, "placement starts at zero");
+        runtime.frame(nativeFrame, { now: 120, acquireMs: 0 });
+        near(player.time, 0.1, "AR frame drives the new player");
+        near(player.instances[0].instanceRoot.rotation.y, Math.PI / 80, "transform follows restarted time");
+        if (previousState === "paused") player.pause();
+        if (previousState === "ended") player.update(8);
+        assert.equal(player.state, previousState);
+        component.pageLifetimes.hide.call(host);
+        assert.equal(player.state, "disposed");
+        assert.equal(host.nodeList.length, 0);
+        assert.equal(cache.stats.live, 0);
+      }
+      component.lifetimes.detached.call(host);
+      assert.equal(host._runtime, null);
+    }
+    assert.equal(requests, 9, "every re-entry reads a fresh scene document");
+    console.log("PASS AR component hide/show and detach/re-entry: playing/paused/ended reset clock and pose, old players fully disposed");
+  }
+
   // Real queue integration: same registry, tick, tap, capacity and clearing as other assets.
   {
     let response = { statusCode: 200, data: compositionManifest() };
@@ -578,13 +646,13 @@ async function main() {
     asset._contentEpoch = host._contentEpoch;
     response = { statusCode: 400, data: { error: "场景资源不存在" } };
     await assert.rejects(host._placeAsset(asset), /场景资源不存在/);
-    response = { statusCode: 200, data: { ...compositionManifest(), schemaVersion: 3 } };
+    response = { statusCode: 200, data: { ...compositionManifest(), schemaVersion: 2 } };
     await assert.rejects(host._placeAsset(asset), /不支持/);
     response = { statusCode: 200, data: { ...compositionManifest(), schemaVersion: 1 } };
     await assert.rejects(host._placeAsset(asset), /不支持/, "removed protocol is not accepted");
     assert.equal(host.nodeList.length, 0);
 
-    response = { statusCode: 200, data: { ...compositionManifest({ instances: [] }), schemaVersion: 2 } };
+    response = { statusCode: 200, data: { ...compositionManifest({ instances: [] }), schemaVersion: 4 } };
     await host._placeAsset(asset);
     assert.equal(host.nodeList.length, 0, "blank scene is a valid draft with no AR node");
 
