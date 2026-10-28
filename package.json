@@ -11,14 +11,16 @@
     "test:xr-three-lab": "node scripts/test-xr-three-lab.cjs",
     "test:ar-runtime": "node scripts/test-ar-runtime.cjs",
     "test:backend": "node scripts/test-dev-backend.cjs && node scripts/test-backend-environment.cjs",
-    "test": "node scripts/test-dev-backend.cjs && node scripts/test-backend-environment.cjs && node scripts/test-scan-config.cjs && node scripts/test-activities.cjs && node scripts/test-xr-three-lab.cjs && node scripts/test-ar-runtime.cjs && node scripts/test-anchor-recognition.cjs && node scripts/test-capture-motion.cjs && node scripts/test-asset-timing.cjs && node scripts/test-scene-asset.cjs && node scripts/test-scene-preview.cjs",
+    "test": "node scripts/test-dev-backend.cjs && node scripts/test-backend-environment.cjs && node scripts/test-scan-config.cjs && node scripts/test-activities.cjs && node scripts/test-xr-three-lab.cjs && node scripts/test-ar-runtime.cjs && node scripts/test-anchor-recognition.cjs && node scripts/test-capture-motion.cjs && node scripts/test-asset-timing.cjs && node scripts/test-scene-asset.cjs && node scripts/test-scene-media.cjs && node scripts/test-scene-preview.cjs",
     "test:activities": "node scripts/test-activities.cjs",
     "test:scan-config": "node scripts/test-scan-config.cjs",
     "test:scene-asset": "node scripts/test-scene-asset.cjs",
     "scene:preview": "node scripts/prepare-scene-preview.cjs",
     "test:scene-preview": "node scripts/test-scene-preview.cjs",
     "build:scene-core": "node scripts/build-scene-core.cjs",
-    "test:scene-memory": "node --expose-gc scripts/test-scene-memory.cjs"
+    "test:scene-memory": "node --expose-gc scripts/test-scene-memory.cjs",
+    "test:scene-media": "node scripts/test-scene-media.cjs",
+    "scene:fixture": "node scripts/prepare-performance-fixture.cjs"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +32,6 @@
     "three": "0.186.1"
   },
   "dependencies": {
-    "@spatial-memory/scene-core": "file:vendor/spatial-memory-scene-core-2.1.0.tgz"
+    "@spatial-memory/scene-core": "file:vendor/spatial-memory-scene-core-2.2.0.tgz"
   }
 }

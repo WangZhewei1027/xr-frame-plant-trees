@@ -2,19 +2,41 @@ const { CONFIG, backendRpc } = require("../../../utils/backend");
 const { THREE } = require("../../../lib/three-runtime/runtime");
 const { createCompositionPlayer } = require("../../../lib/scene-runtime/composition");
 
-// One scene placement occupies one queue slot; its model children share its lifetime.
+// One scene placement occupies one queue slot; all children share its lifetime.
 module.exports = {
   async _loadScenePlayer(asset, manifest) {
-    if ((manifest?.schemaVersion !== 4 && manifest?.schemaVersion !== 5) || manifest.assetId !== asset.id || manifest.content?.kind !== "composition")
+    if ((manifest?.schemaVersion !== 4 && manifest?.schemaVersion !== 5 && manifest?.schemaVersion !== 7) || manifest.assetId !== asset.id || manifest.content?.kind !== "composition")
       throw new Error("不支持的场景内容");
     if (manifest.content.instances?.length === 0) return null;
-    const player = createCompositionPlayer(manifest, { modelCache: this._modelCache });
+    const player = createCompositionPlayer(manifest, {
+      modelCache: this._modelCache, canvas: this._canvas,
+      onState: (state, message, current) => this._scenePlayerState(asset, state, message, current),
+    });
     try {
       await player.load();
       if (!this._isAssetPlacementCurrent(asset)) { player.dispose(); return null; }
-      if (player.state !== "ready") throw new Error(player.diagnostics?.message || "场景模型加载失败");
+      if (player.state !== "ready") throw new Error(player.diagnostics?.message || "场景内容加载失败");
       return player;
     } catch (error) { player.dispose(); throw error; }
+  },
+  _scenePlayerState(asset, state, message, player) {
+    const entry = this.nodeList?.find(item => item.node === player.root && !item._destroyed);
+    const pending = this._scenePreviewPlayer === player;
+    if (state === "error" && (entry || pending)) {
+      if (pending) this._scenePreviewPlayer = null;
+      if (this._mountedScenePreviewPlayer === player) this._mountedScenePreviewPlayer = null;
+      if (entry) {
+        this.nodeList.splice(this.nodeList.indexOf(entry), 1);
+        this._destroyNode(entry);
+      }
+      if (this._scenePreviewMode) {
+        this._scenePreviewPlaced = false;
+        this._scenePreviewStatus("error", message || "场景媒体播放失败，请重试");
+      } else this.reportAssetError(asset, new Error(message || "场景媒体播放失败"));
+      return;
+    }
+    if (this._mountedScenePreviewPlayer === player && ["playing", "paused", "ended"].includes(state))
+      this.triggerEvent("sceneplayback", { state });
   },
   _mountScenePlayer(asset, player) {
     const camera = this.getCamTransform();
@@ -32,14 +54,20 @@ module.exports = {
     this.shadowRoot.add(root);
     const entry = this._registerNode(asset.id, root, null, {
       type: "scene", contentEpoch: asset._contentEpoch, repulsionEnabled: false,
-      dispose: () => player.dispose(), tick: (dt) => player.update(dt),
+      dispose: () => {
+        if (this._mountedScenePreviewPlayer === player) this._mountedScenePreviewPlayer = null;
+        player.dispose();
+      }, tick: (dt) => player.update(dt),
       onTap: () => {
         if (player.state === "ended") player.restart();
         else if (player.state === "playing") player.pause();
         else player.play();
       },
     });
-    if (!entry._destroyed) player.play();
+    if (!entry._destroyed) {
+      if (this._scenePreviewMode) this._mountedScenePreviewPlayer = player;
+      player.play();
+    }
     return !entry._destroyed;
   },
   async _placeSceneAsset(asset) {

@@ -1,4 +1,8 @@
 <view class="scene-preview">
-  <xr-start wx:if="{{sceneId && !invalid}}" id="preview" scene-id="{{sceneId}}" scene-organization-id="{{organizationId}}" width="{{renderWidth}}" height="{{renderHeight}}" style="width:{{width}}px;height:{{height}}px" bindscenestatus="onSceneStatus" bindrenderstatus="onRenderStatus" />
+  <xr-start wx:if="{{sceneId && !invalid}}" id="preview" scene-id="{{sceneId}}" scene-organization-id="{{organizationId}}" width="{{renderWidth}}" height="{{renderHeight}}" style="width:{{width}}px;height:{{height}}px" bindscenestatus="onSceneStatus" bindsceneplayback="onScenePlayback" bindrenderstatus="onRenderStatus" />
   <button wx:if="{{state !== 'ready' && !invalid}}" class="place-button" disabled="{{state !== 'placeable' && state !== 'error' && state !== 'empty'}}" bindtap="place">{{state === 'error' || state === 'empty' ? '重试' : state === 'placeable' ? '放置场景' : state === 'tracking' ? '正在定位…' : '正在加载…'}}</button>
+  <view wx:if="{{state === 'ready'}}" class="transport">
+    <button bindtap="togglePlayback">{{playback === 'playing' ? '暂停演出' : playback === 'ended' ? '重新播放' : '继续播放'}}</button>
+    <button wx:if="{{playback !== 'ended'}}" bindtap="restart">重播</button>
+  </view>
 </view>

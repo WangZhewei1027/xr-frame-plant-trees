@@ -10,6 +10,7 @@ module.exports = {
     this._scenePreviewRequest = (this._scenePreviewRequest || 0) + 1;
     this._scenePreviewPlayer?.dispose();
     this._scenePreviewPlayer = null;
+    this._mountedScenePreviewPlayer = null;
     this._scenePreviewFrameAt = null;
     this._scenePreviewPlaced = false;
     this._scenePreviewState = null;
@@ -28,7 +29,7 @@ module.exports = {
       if (statusCode !== 200) throw new Error(data?.error || "场景加载失败");
       player = await this._loadScenePlayer(asset, data);
       if (request !== this._scenePreviewRequest || !this._isAssetPlacementCurrent(asset)) { player?.dispose(); return; }
-      if (!player) { this._scenePreviewStatus("empty", "场景中还没有模型，请在管理端添加并保存"); return; }
+      if (!player) { this._scenePreviewStatus("empty", "场景中还没有内容，请在管理端添加并保存"); return; }
       this._scenePreviewPlayer = player;
       this._scenePreviewStatus("tracking", "正在获取相机位置…");
     } catch (error) {
@@ -59,6 +60,16 @@ module.exports = {
       this._scenePreviewStatus("ready", "");
       return true;
     } catch (error) { player.dispose(); this._scenePreviewStatus("error", error.message); return false; }
+  },
+  toggleScenePreviewPlayback() {
+    if (this._retrievalPaused || this._disposed) return;
+    const player = this._mountedScenePreviewPlayer;
+    if (player?.state === "playing") player.pause();
+    else if (player?.state === "ended") player.restart();
+    else player?.play();
+  },
+  restartScenePreviewPlayback() {
+    if (!this._retrievalPaused && !this._disposed) this._mountedScenePreviewPlayer?.restart();
   },
   retryScenePreview() {
     if (!this._scenePreviewMode || this._disposed || this._retrievalPaused) return;

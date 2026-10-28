@@ -1,3 +1,4 @@
+const { samplePresentation } = require("../../lib/scene-runtime/vendor/scene-core");
 // Deterministic checks against a loaded, real mini-program composition player.
 // No alternate renderer, animation evaluator or fake model cache is used here.
 function verifyScenePlayer(player, manifest, cache) {
@@ -7,10 +8,10 @@ function verifyScenePlayer(player, manifest, cache) {
     checks.push(name);
   };
   const near = (a, b) => Math.abs(a - b) < 0.0001;
-  assert(player.state === "ready", "模型全部加载完成");
+  assert(player.state === "ready", "场景内容全部加载完成");
   assert(player.instances.length > 0 && player.instances.length === manifest.content.instances.length, "实例数量与 Web 保存一致");
   const objects = player.instances.map((item) => item.object);
-  assert(new Set(objects).size === objects.length, "每个实例使用独立模型副本");
+  assert(new Set(objects).size === objects.length, "每个实例使用独立空间对象");
   for (const entry of player.instances) {
     assert(entry.instanceRoot.position.toArray().every(Number.isFinite), `${entry.id}：变换有效`);
     if (entry.inst.animation) assert(!!entry.action, `${entry.id}：GLB 动画片段可用`);
@@ -42,6 +43,24 @@ function verifyScenePlayer(player, manifest, cache) {
       player.update(Math.min(entry.inst.animation.startSeconds / 2, step));
       assert(near(entry.action.time, 0), `${entry.id}：延迟开始前保持首帧`);
     }
+  }
+  if (manifest.schemaVersion === 7) {
+    player.pause();
+    for (const entry of player.instances) {
+      if (!entry.inst.timing) continue;
+      const timing = entry.inst.timing;
+      const end = timing.endSeconds ?? player.duration;
+      const points = [Math.max(0, timing.startSeconds - .01), timing.startSeconds,
+        timing.startSeconds + Math.min(.1, Math.max(0, end - timing.startSeconds) / 2), end];
+      for (const time of points) {
+        if (!Number.isFinite(time) || time > player.duration) continue;
+        player.seek(time);
+        const expected = samplePresentation(entry.inst, player.time, player.duration);
+        assert(entry.instanceRoot.visible === expected.visible, `${entry.id} @${time.toFixed(2)}s：出入场与时间轴一致`);
+      }
+    }
+    player.seek(0);
+    assert(player.state === "paused" && player.time === 0, "暂停定位回起点不播放声音");
   }
   if (player.duration) {
     player.restart();

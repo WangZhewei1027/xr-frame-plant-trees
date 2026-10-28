@@ -17,3 +17,8 @@ xr-start { display: block; }
 }
 .place-button::after { border: none; }
 .place-button[disabled] { background: rgba(31, 31, 31, 0.8); color: #b8b8b8; }
+
+.transport { position: absolute; bottom: calc(24px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 6px; border: 1px solid rgba(255,255,255,.2); border-radius: 28px; background: rgba(20,26,24,.88); white-space: nowrap; }
+.transport button { margin: 0; padding: 0 20px; border-radius: 22px; background: transparent; color: #fff; font-size: 14px; line-height: 44px; }
+.transport button:first-child { background: #8fbc8f; color: #142014; }
+.transport button::after { border: none; }

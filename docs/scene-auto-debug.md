@@ -19,8 +19,8 @@ flowchart LR
   Render --> Controls[播放画面与暂停、重播、清场]
 ```
 
-- Scene 是团队场景，schema 6 编排 JSON 保存在 `scene.document`，接口编译为播放 schema 4（无分组）或 schema 5（有分组）；模型作为团队基础 Asset，被场景按 ID 引用。保存直接生效，不需要发布。
-- Web 直接在同一 DOM 中呈现 Three.js Editor 原生视口、应用属性/时间轴和统一撤销历史。实例 position/rotation/scale 的 9 个数值通道由两端同源 Scene Core 2.1.0 采样（分组节点同样采样）；旋转界面显示度，协议为 Euler XYZ 弧度，GLB 内置动画继续交给 Three.AnimationMixer。
+- Scene 是团队场景，schema 6 编排 JSON 保存在 `scene.document`，接口编译为播放 schema 4（无分组模型）、schema 5（分组模型）或 schema 7（媒体、文字和出入场演出）；媒体作为团队基础 Asset 被场景按 ID 引用，文字直接属于 Scene。保存直接生效，不需要发布。
+- Web 直接在同一 DOM 中呈现 Three.js Editor 原生视口、应用属性/时间轴和统一撤销历史。实例 position/rotation/scale 的 9 个数值通道由两端同源 Scene Core 2.2.0 采样（分组节点同样采样）；旋转界面显示度，协议为 Euler XYZ 弧度，GLB 内置动画继续交给 Three.AnimationMixer。
 - 场景接口按当前数据解析模型 URL；使用与场景同一团队的模型。协议与正式 AR 接入见 [Scene 素材播放](scene-asset.md)。
 - 小程序通过 HTTP 接口访问后端，不直接连接数据库。素材可能仍从 OSS 下载；使用本地数据库不代表所有媒体都已离线。
 - 联调页路径为 `labs/xr-three/scene-preview`。它使用模拟相机，跳过 VisionKit；复用正式代码中的 `fetchScenePreview`、`ModelCache` 和 `createCompositionPlayer`。
@@ -374,3 +374,27 @@ wechatide -c Codex get_simulator_console --project "$PWD" --command 'grep -n Sce
 联调页曾在 `onHide` 释放播放器，却在 `onShow` 只恢复帧循环，返回后不会恢复场景。现已在返回时重新读取已保存场景并从 0 秒播放；用户主动清场则保持为空。帧循环带独立代次，隐藏前已经排队的回调不能推进新播放器或生成重复循环。
 
 `test-scene-preview.cjs` 通过真实 Page 方法和播放器验证播放中、暂停后、结束后及请求未完成时离开/返回，覆盖时钟重新起算、迟到请求/帧、主动清场和卸载。GPU、Canvas 调度和 HTTP 使用测试替身。`test-scene-asset.cjs` 另验证正式 AR 组件的隐藏/显示、销毁后重新创建，以及真实 ARRuntime 帧时钟和变换求值；这些路径未复现时间未重置的问题，VisionKit 和 GPU 仍使用测试替身。本次 `npm test` 通过，未补做模拟器或真机重现。
+
+
+## 演出素材联调（schema 7）
+
+自带合成的 GLB、PNG、WAV 和 H.264/AAC MP4 样例，无需写数据库或创建团队素材。可使用 `npm run scene:fixture`（需要 ffmpeg）重新生成，开发版打开：
+
+```text
+labs/xr-three/scene-preview?fixture=performance
+```
+
+完整样例包含视频、视频声音、独立音频、空间文字、图片和模型，覆盖裁切、倍速、循环与错开的出入场/淡变。页面自动验证结束后重新加载，保留真实渲染与播放控制。纯音频或开场全黑不会被误判为没有三角形。
+
+微信开发者工具的 VideoDecoder.start 明确返回「开发者工具暂时不支持此 API 调试，请使用真机进行开发」，完整样例应在手机开发版运行。模拟器可打开 `fixture=audio-text`，保留真实音频、文字、图片、模型与 WebGL 渲染，仅排除不支持的原生视频解码器。两条入口都仅在 develop 有效。
+
+`npm run test:scene-media` 测试原生边界替身上的媒体时钟、音量包络、倍速、循环、暂停和迟到结果释放；相邻 Web 仓库 `npm run test:cross-runtime` 驱动两端实际适配代码，分别报告空间/淡变误差与播放中的媒体纠偏容差。Node 替身不能证明原生解码、设备字体或真机音画同步精度。
+
+
+### 2026-10-29 演出播放器验收
+
+- Web `npm run check`（类型、lint、64 项测试、生产构建）通过；小程序 `npm test`（含新的 scene-media 适配器测试）通过。
+- 两端实际适配器：旧模型 8,782 次对比、新演出 86 个采样点 / 16,587 次数值对比通过；空间变换、淡变、音量、倍速最大误差 0，运行中的媒体位置最大偏差 0.125 秒，位于现有 0.15 秒纠偏阈值内。原生边界使用替身，不能据此声称手机端解码精度。
+- 内存回归：220 次 Core、120 次实际 GLB 播放器加载/退出，未保留播放器、场景、克隆或缓存引用。另增加 4 倍速、慢 seek 连续 10 帧的回归，防止持续追逐新位置而一帧都不显示。
+- 微信开发者工具 `fixture=audio-text` 使用实际 WebAudio 解码、文字纹理和 WebGL2，通过 33 项检查；界面暂停保持在 3.85 秒，播放恢复后继续推进，清场后播放器为空。10 次原生媒体与 WebGL 加载/播放/退出后 GPU 计数保持相同：geometry 1、texture 1、program 0（模型缓存保留一份）。截图保存于工作区 `scene-validation-20261029/miniapp-performance.png`，未纳入仓库。
+- 完整视频样例准确报告开发者工具不支持 VideoDecoder.start。视频真实解码、手机 AR 追踪、长媒体内存和实际音画同步尚需真机验收；本次没有上传或发布。

@@ -4,6 +4,7 @@ const { createCompositionPlayer } = require("../../lib/scene-runtime/composition
 const { fetchScenePreview } = require("../../utils/backend");
 const { verifyScenePlayer } = require("./scene-checks");
 const { stressScene } = require("./scene-stress");
+const { visualProbe } = require("./scene-visual-probe");
 
 Page({
   data: { enabled: false, sceneId: "", organizationId: "", busy: false, loaded: false, status: "初始化…", report: "", playback: "" },
@@ -13,6 +14,7 @@ Page({
     this._reloadOnShow = false;
     this._active = true;
     this._enabled = wx.getAccountInfoSync().miniProgram.envVersion === "develop";
+    this._fixture = this._enabled && ["performance", "audio-text"].includes(options.fixture) ? options.fixture : null;
     this._stressCycles = Math.min(500, Math.max(0, Number(options.stressCycles) || 0));
     this.setData({ enabled: this._enabled, sceneId: options.sceneId || "", organizationId: options.organizationId || "",
       status: this._enabled ? "等待 WebGL2" : "此页面仅允许开发版使用" });
@@ -29,7 +31,7 @@ Page({
         this._renderer = new THREE.WebGLRenderer({ canvas: createCanvasFacade(canvas, gl, width, height), context: gl });
         this._renderer.setSize(width, height, false);
         this._renderer.setClearColor(0x18212b);
-        this._renderer.debug.onShaderError = () => { this._shaderError = "模型着色器编译失败"; };
+        this._renderer.debug.onShaderError = () => { this._shaderError = "场景着色器编译失败"; };
         this._scene = new THREE.Scene();
         this._scene.add(new THREE.AmbientLight(0xffffff, 3));
         const light = new THREE.DirectionalLight(0xffffff, 3);
@@ -41,7 +43,7 @@ Page({
         this._cache = new ModelCache(canvas);
         this.setData({ status: `Three.js r${THREE.REVISION} 就绪` });
         this.startFrames();
-        if (this.data.sceneId && this.data.organizationId) {
+        if (this._fixture || (this.data.sceneId && this.data.organizationId)) {
           if (this._stressCycles) this.runStress(this._stressCycles); else this.loadScene();
         }
       } catch (error) { this.fail(error); }
@@ -49,29 +51,49 @@ Page({
   },
   onSceneInput(event) { this.setData({ sceneId: event.detail.value.trim() }); },
   onOrganizationInput(event) { this.setData({ organizationId: event.detail.value.trim() }); },
+  async readManifest() {
+    if (this._fixture) {
+      const manifest = JSON.parse(JSON.stringify(require("./performance-fixture")));
+      // VideoDecoder is a phone-only API in DevTools. Keep a real audio/text/GPU path too.
+      if (this._fixture === "audio-text") {
+        delete manifest.resources.video; delete manifest.content.assets.video;
+        manifest.content.instances = manifest.content.instances.filter(item => item.asset !== "video");
+      }
+      return manifest;
+    }
+    const response = await fetchScenePreview(this.data.sceneId, this.data.organizationId);
+    if (response.statusCode !== 200) throw new Error(response.data?.error || "场景接口失败");
+    if (response.data?.assetId !== this.data.sceneId) throw new Error("返回了错误的场景");
+    return response.data;
+  },
   async loadScene() {
     if (!this._enabled || !this._cache || this.data.busy || !this._active) return;
     this._reloadOnShow = false;
     const { sceneId, organizationId } = this.data;
-    if (![sceneId, organizationId].every((id) => /^[0-9a-f-]{36}$/i.test(id))) {
+    if (!this._fixture && ![sceneId, organizationId].every((id) => /^[0-9a-f-]{36}$/i.test(id))) {
       this.setData({ status: "请填写场景和工作空间 UUID" }); return;
     }
     this.clearScene();
     const generation = this._generation;
-    this.setData({ busy: true, status: "读取本地后端并加载真实 GLB…", report: "" });
+    this.setData({ busy: true, status: "读取场景并加载模型和媒体…", report: "" });
     try {
-      const response = await fetchScenePreview(sceneId, organizationId);
+      const manifest = await this.readManifest();
       if (this._dead || generation !== this._generation) return;
-      if (response.statusCode !== 200) throw new Error(response.data?.error || "场景接口失败");
-      const manifest = response.data;
-      if (manifest.assetId !== sceneId || !manifest.content?.instances?.length) throw new Error("场景为空或返回了错误的素材");
-      const player = this._player = createCompositionPlayer(manifest, { modelCache: this._cache });
+      if (!manifest.content?.instances?.length) throw new Error("场景为空");
+      const player = this._player = createCompositionPlayer(manifest, { modelCache: this._cache, canvas: this._canvas });
       await player.load();
       if (this._dead || generation !== this._generation) { player.dispose(); return; }
-      if (player.state !== "ready") throw new Error(player.diagnostics?.message || "GLB 加载失败");
+      if (player.state !== "ready") throw new Error(player.diagnostics?.message || "场景内容加载失败");
       const checks = verifyScenePlayer(player, manifest, this._cache);
       // Reload after disposal check to leave a real, interactive render for inspection.
-      const preview = this._player = createCompositionPlayer(manifest, { modelCache: this._cache });
+      const preview = this._player = createCompositionPlayer(manifest, {
+        modelCache: this._cache, canvas: this._canvas,
+        onState: (state, message, current) => {
+          if (state === "error" && !this._dead && generation === this._generation && this._player === current) {
+            this.clearScene(); this.fail(new Error(message));
+          }
+        },
+      });
       await preview.load();
       if (this._dead || generation !== this._generation) { preview.dispose(); return; }
       if (preview.state !== "ready") throw new Error(preview.diagnostics?.message || "重载失败");
@@ -81,10 +103,13 @@ Page({
       const size = Math.max(box.getSize(new THREE.Vector3()).length(), 1);
       this._camera.position.copy(center).add(new THREE.Vector3(0.8, 0.5, 1.4).multiplyScalar(size));
       this._camera.lookAt(center);
+      const probe = visualProbe(manifest);
+      if (typeof preview.seek === "function") preview.seek(probe.time);
       this._renderer.render(this._scene, this._camera);
       if (this._shaderError) throw new Error(this._shaderError);
-      if (!this._renderer.info.render.triangles) throw new Error("画面没有提交模型三角形");
+      if (probe.visual && !this._renderer.info.render.triangles) throw new Error("画面没有提交可见内容三角形");
       checks.push(`真实 WebGL2 渲染：${this._renderer.info.render.triangles} 个三角形`);
+      if (typeof preview.seek === "function") preview.seek(0);
       preview.play();
       this.setData({ busy: false, loaded: true, status: `PASS · ${checks.length} 项检查通过`, report: checks.map((name) => `✓ ${name}`).join("\n") });
       console.log("[ScenePreview] PASS", { sceneId, organizationId, checks, schemaVersion: manifest.schemaVersion });
@@ -131,9 +156,8 @@ Page({
     const generation = this._generation;
     this.setData({ busy: true, status: '正在循环加载、播放并退出场景…', report: '' });
     try {
-      const response = await fetchScenePreview(this.data.sceneId, this.data.organizationId);
-      if (response.statusCode !== 200) throw new Error(response.data?.error || '读取场景失败');
-      const report = await stressScene({ manifest: response.data, cache: this._cache, scene: this._scene, renderer: this._renderer, camera: this._camera,
+      const manifest = await this.readManifest();
+      const report = await stressScene({ manifest, cache: this._cache, scene: this._scene, renderer: this._renderer, camera: this._camera, canvas: this._canvas,
         cycles: typeof cycles === 'number' ? Math.max(1, Math.min(500, cycles)) : 100,
         cancelled: () => this._dead || !this._active || generation !== this._generation,
         progress: (count) => { if (count % 10 === 0) this.setData({ status: `循环验收 ${count} 次…` }); },

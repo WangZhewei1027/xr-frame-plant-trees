@@ -468,6 +468,170 @@ async function main() {
     console.log("PASS load failure/cancel: all acquired handles released, error diagnostics, retry, idempotent dispose");
   }
 
+  // Schema 7 shares one clock across visibility, fades and every native-media adapter.
+  {
+    const manifest = compositionManifest({ durationSeconds: 8, instances: [] });
+    manifest.schemaVersion = 7;
+    const basic = { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: null };
+    const timing = { startSeconds: 2, endSeconds: 6, fadeInSeconds: 2, fadeOutSeconds: 1 };
+    manifest.content.instances = [
+      { ...basic, id: "fading", asset: "dancer", timing },
+      { ...basic, id: "steady", asset: "dancer" },
+      { ...basic, id: "caption", text: { content: "空间文字", color: "#102030", fontSize: .25, width: 3, align: "center" }, timing },
+      { ...basic, id: "music", asset: "music", timing, media: { trimStartSeconds: 1, trimEndSeconds: 4, playbackRate: 2, volume: .8, muted: false, loop: true } },
+    ];
+    manifest.content.assets.music = { assetId: "music" };
+    manifest.resources.music = { kind: "audio", url: "fixture.mp3" };
+    const sharedMaterial = new THREE.MeshBasicMaterial({ opacity: .8 });
+    let materialDisposals = 0;
+    const cache = fakeCache(THREE), acquire = cache.acquire;
+    cache.acquire = async url => {
+      const handle = await acquire(url);
+      handle.object.children[0].material.dispose();
+      handle.object.children[0].material = sharedMaterial;
+      return handle;
+    };
+    const surfaces = [], contexts = [];
+    const surfaceFactory = async (inst, resource, context) => {
+      const material = new THREE.MeshBasicMaterial({ opacity: .6 });
+      const object = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+      const surface = { object, materials: [material], calls: [], disposed: 0,
+        sync(...args) { this.calls.push(args); },
+        dispose() { this.disposed++; object.geometry.dispose(); material.dispose(); },
+      };
+      surfaces.push(surface); contexts.push(context);
+      return surface;
+    };
+    const states = [];
+    const player = createCompositionPlayer(manifest, { modelCache: cache, surfaceFactory, onState: state => states.push(state) });
+    await player.load(); assert.equal(player.state, "ready");
+    assert.equal(cache.stats.acquires, 2, "media and scene text never enter the GLB cache");
+    assert.equal(surfaces.length, 2);
+    const [fading, steady, caption, music] = player.instances;
+    assert.notEqual(fading.object.children[0].material, steady.object.children[0].material, "instance fade uses independent materials");
+    for (const entry of [fading, steady]) entry.materials[0].material.addEventListener("dispose", () => materialDisposals++);
+    assert.equal(fading.instanceRoot.visible, false); assert.equal(caption.instanceRoot.visible, false);
+    assert.ok(surfaces.every(surface => surface.calls.at(-1)[1] === false), "loaded media is silent before placement");
+    player.play(); player.update(3);
+    near(fading.materials[0].material.opacity, .4, "model fade envelope at midpoint");
+    near(steady.materials[0].material.opacity, .8, "another clone remains unchanged");
+    near(sharedMaterial.opacity, .8, "cache material remains untouched");
+    near(caption.materials[0].material.opacity, .3, "text uses the same envelope");
+    assert.deepEqual(surfaces[1].calls.at(-1), [3, true, 8]);
+    player.pause(); assert.deepEqual(surfaces[1].calls.at(-1), [3, false, 8], "pause stops sound synchronously");
+    player.seek(5.5); near(fading.materials[0].material.opacity, .4); near(caption.materials[0].material.opacity, .3);
+    assert.equal(player.state, "paused"); assert.deepEqual(surfaces[1].calls.at(-1), [5.5, false, 8]);
+    player.seek(6); assert.equal(music.instanceRoot.visible, false, "out point is exclusive");
+    player.seek(8); assert.equal(player.state, "ended");
+    player.seek(0); assert.equal(player.state, "paused"); assert.equal(fading.instanceRoot.visible, false);
+    player.restart(); assert.equal(player.state, "playing"); assert.deepEqual(surfaces[1].calls.at(-1), [0, true, 8]);
+    player.seek(2); player.update(.5); near(player.time, 2.5, "seeking during playback resumes the shared clock");
+    assert.deepEqual(surfaces[1].calls.at(-1), [2.5, true, 8]);
+    contexts[1].onError(new Error("native decoder failed"));
+    assert.equal(player.state, "error"); assert.equal(player.diagnostics.kind, "media"); assert.equal(player.diagnostics.instanceId, "music");
+    assert.equal(player.root.children.length, 0); assert.equal(cache.stats.live, 0);
+    assert.ok(surfaces.every(surface => surface.disposed === 1), "async native failure releases the whole scene once");
+    assert.equal(materialDisposals, 2, "owned model materials release once");
+    player.dispose(); assert.ok(surfaces.every(surface => surface.disposed === 1));
+    assert.equal(states.at(-1), "disposed");
+    sharedMaterial.dispose();
+    console.log("PASS schema 7 absolute cues, model/text fades, independent materials, native sync, seeking and async failure cleanup");
+  }
+
+  // Bad external hierarchy/media data is refused before any resource/native operation.
+  {
+    const basic = { id: "text", position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: null,
+      text: { content: "Only in this scene", color: "#ffffff", fontSize: .25, width: 3, align: "left" } };
+    const valid = { schemaVersion: 7, assetId: "text-only", resources: {}, content: {
+      kind: "composition", units: "meters", loop: false, durationSeconds: 4, assets: {}, instances: [basic],
+    } };
+    let calls = 0, disposed = 0, finish;
+    const surfaceFactory = async () => { calls++; return { object: new THREE.Group(), materials: [], sync() {}, dispose() { disposed++; } }; };
+    const textOnly = createCompositionPlayer(valid, { surfaceFactory });
+    await textOnly.load(); assert.equal(textOnly.state, "ready", "text-only scenes need no ModelCache or team asset");
+    textOnly.dispose(); assert.equal(disposed, 1);
+    const cases = [
+      data => { data.content.instances = []; },
+      data => { data.content.groups = null; },
+      data => { data.content.instances[0].parent = "missing"; },
+      data => { data.content.instances[0].id = "constructor"; },
+      data => { data.content.groups = Array.from({ length: 5 }, (_, index) => ({ ...basic, id: `group${index}`, ...(index ? { parent: `group${index - 1}` } : {}) })); },
+      data => { data.content.instances[0].timing = { startSeconds: 3, endSeconds: 2, fadeInSeconds: 0, fadeOutSeconds: 0 }; },
+      data => { data.content.instances[0].text.width = Infinity; },
+      data => { data.content.instances[0].media = { trimStartSeconds: 0, trimEndSeconds: null, playbackRate: 1, volume: 1, loop: false, muted: false }; },
+      data => { data.content.groups = [{ ...basic, id: "cycle", parent: "cycle" }]; },
+      data => { data.content.instances.push({ ...basic }); },
+      data => { data.schemaVersion = 5; },
+    ];
+    for (const change of cases) {
+      const data = structuredClone(valid); change(data);
+      const player = createCompositionPlayer(data, { surfaceFactory });
+      await player.load(); assert.equal(player.state, "error"); assert.equal(player.diagnostics.kind, "protocol"); player.dispose();
+    }
+    assert.equal(calls, 1, "malformed scenes never start surface loads");
+    const delayed = createCompositionPlayer(valid, { surfaceFactory: () => new Promise(resolve => { finish = resolve; }) });
+    const pending = delayed.load(); await until(() => !!finish, "pending text surface");
+    delayed.dispose(); finish({ object: new THREE.Group(), sync() {}, dispose() { disposed++; } }); await pending;
+    assert.equal(disposed, 2, "late surfaces are released after a cancelled load"); assert.equal(delayed.root.children.length, 0);
+    console.log("PASS schema 7 validation before IO, scene-owned text without asset/cache and late native-surface disposal");
+  }
+
+  // Cancellation and sibling failures release ready surfaces immediately, including reentrant callbacks.
+  {
+    const basic = { position: [1, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: null,
+      text: { content: "Scene text", color: "#ffffff", fontSize: .25, width: 3, align: "left" } };
+    const manifest = { schemaVersion: 7, resources: {}, content: { kind: "composition", units: "meters", loop: false,
+      durationSeconds: 4, assets: {}, instances: [{ ...basic, id: "first" }, { ...basic, id: "second" }] } };
+    const created = [], contexts = []; let finish, delayed = true, calls = 0;
+    const surfaceFactory = async (inst, resource, context) => {
+      calls++; contexts.push(context);
+      const surface = { object: new THREE.Group(), materials: [], disposed: 0, sync() {}, dispose() { this.disposed++; } };
+      created.push(surface);
+      if (delayed && inst.id === "second") await new Promise(resolve => { finish = resolve; });
+      return surface;
+    };
+    const cancelled = createCompositionPlayer(manifest, { surfaceFactory });
+    const pending = cancelled.load(); await cancelled.load(); await flush();
+    assert.equal(calls, 2, "reentrant load never starts duplicate resources");
+    cancelled.dispose(); assert.equal(created[0].disposed, 1, "ready siblings release before pending downloads finish");
+    assert.equal(contexts[1].isCancelled(), true); finish(); await pending; await cancelled.load();
+    assert.equal(created[1].disposed, 1); assert.equal(calls, 2, "disposed players cannot reload");
+
+    const retry = createCompositionPlayer(manifest, { surfaceFactory });
+    const failed = retry.load(); await flush();
+    const obsolete = contexts[2];
+    obsolete.onError(new Error("decoder failed during load"));
+    assert.equal(created[2].disposed, 1); assert.equal(contexts[3].isCancelled(), true);
+    finish(); await failed;
+    assert.equal(created[3].disposed, 1); assert.equal(retry.state, "error"); assert.equal(retry.diagnostics.kind, "media");
+    assert.equal(retry.diagnostics.instanceId, "first");
+    delayed = false; await retry.load(); assert.equal(retry.state, "ready");
+    obsolete.onError(new Error("stale decoder callback")); assert.equal(retry.state, "ready", "old generation cannot fail a retry");
+    retry.dispose(); assert.ok(created.every(surface => surface.disposed === 1));
+
+    let started = 0;
+    const leaveOnLoading = createCompositionPlayer(manifest, { surfaceFactory: () => { started++; },
+      onState(state, message, player) { if (state === "loading") player.dispose(); } });
+    await leaveOnLoading.load(); assert.equal(started, 0); assert.equal(leaveOnLoading.state, "disposed");
+    let disposeCount = 0;
+    const initializationError = createCompositionPlayer(manifest, { surfaceFactory: async (inst, resource, context) => ({
+      object: new THREE.Group(), materials: [], sync() { context.onError(new Error("initial media sync failed")); }, dispose() { disposeCount++; },
+    }) });
+    await initializationError.load(); assert.equal(initializationError.state, "error"); assert.equal(disposeCount, 2);
+    initializationError.dispose(); assert.equal(disposeCount, 2);
+
+    const nested = structuredClone(manifest);
+    nested.content.instances = [{ ...basic, id: "first", parent: "group3", timing: { startSeconds: 1, endSeconds: 3, fadeInSeconds: 1, fadeOutSeconds: 0 } }];
+    nested.content.groups = Array.from({ length: 4 }, (_, index) => ({ id: `group${index}`, position: [1, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], ...(index ? { parent: `group${index - 1}` } : {}) }));
+    nested.content.groups[0].tracks = { "position.x": [0, 4].map(time => ({ time, value: time, handles: [.5, .5, .5, .5], connectedRight: true })) };
+    const grouped = createCompositionPlayer(nested, { surfaceFactory }); await grouped.load(); assert.equal(grouped.state, "ready");
+    grouped.seek(2); grouped.root.updateMatrixWorld(true);
+    const entry = grouped.instances[0]; near(new THREE.Vector3().setFromMatrixPosition(entry.instanceRoot.matrixWorld).x, 6, "text composes all four group transforms and absolute-time tracks");
+    assert.equal(entry.instanceRoot.visible, true); grouped.seek(3); assert.equal(entry.instanceRoot.visible, false);
+    grouped.dispose();
+    console.log("PASS schema 7 four-level groups, empty/invalid data, concurrent load, immediate cancellation, retry and initialization failure cleanup");
+  }
+
   // QR preview uses the real composition player and the same mounting/disposal code.
   {
     let response = { statusCode: 200, data: compositionManifest() };
@@ -553,6 +717,71 @@ async function main() {
     host._arReady = false; host.retryAR = () => { restartedAR = true; };
     host.retryScenePreview(); assert.equal(restartedAR, true, "retry starts AR again when initialization failed");
     console.log("PASS QR scene: manual placement, latest camera, single mount, tracking gaps, background cancellation, slow models, errors and retry");
+  }
+
+  // Host controls and failure recovery also work when a scene has sound but nothing to raycast.
+  {
+    const manifest = { schemaVersion: 7, assetId: "audio-scene", resources: { music: { kind: "audio", url: "music.mp3" } }, content: {
+      kind: "composition", units: "meters", durationSeconds: 4, loop: false, assets: { music: { assetId: "music" } },
+      instances: [{ id: "music", asset: "music", position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], animation: null,
+        timing: { startSeconds: 0, endSeconds: 4, fadeInSeconds: 1, fadeOutSeconds: 1 },
+        media: { trimStartSeconds: 0, trimEndSeconds: null, playbackRate: 1, volume: 1, muted: false, loop: false } }],
+    } };
+    const contexts = [], surfaces = [], events = [], errors = []; let contextDisposals = 0, T;
+    const loader = makeLoader(makeWx(), {
+      "utils/backend.ts": { CONFIG: {}, fetchScenePreview: async () => ({ statusCode: 200, data: manifest }), backendRpc: async () => ({ statusCode: 200, data: manifest }) },
+      "lib/scene-runtime/media.js": {
+        createSceneMediaContext: () => ({ dispose() { contextDisposals++; } }),
+        createSceneSurface: async (inst, resource, context) => {
+          contexts.push(context);
+          const surface = { object: new T.Group(), materials: [], calls: [], disposed: 0,
+            sync(...args) { this.calls.push(args); }, dispose() { this.disposed++; } };
+          surfaces.push(surface); return surface;
+        },
+      },
+    });
+    T = loader.lib("three-runtime/runtime").THREE;
+    const methods = loader.load(path.join(root, "components/xr-start/assets/index.js"))({ buckets: { scene: { cap: 1, evict: "farthest" } }, minLifetimeMs: 0 });
+    const preview = loader.load(path.join(root, "components/xr-start/scene-preview.js"));
+    const camera = new T.PerspectiveCamera(); camera.position.set(0, 1.6, 0);
+    const host = { ...methods, ...preview, data: { sceneId: manifest.assetId, sceneOrganizationId: "team" },
+      _scenePreviewMode: true, nodeList: [], _contentEpoch: 1, _arReady: true, _allowedAssetIds: new Set(), shadowRoot: new T.Group(),
+      retrievalMode: "gps", getCamTransform: () => camera, triggerEvent: (type, detail) => events.push({ type, ...detail }),
+      reportAssetError: (asset, error) => errors.push({ asset, error }),
+    };
+    await host._beginScenePreview(); host._tickScenePreview(100);
+    assert.equal(host._scenePreviewState, "placeable"); assert.equal(surfaces[0].calls.at(-1)[1], false);
+    contexts[0].onError(new Error("pending audio failed"));
+    assert.equal(host._scenePreviewPlayer, null); assert.equal(host._scenePreviewState, "error");
+    host._tickScenePreview(200); assert.equal(host._scenePreviewState, "error", "tracking cannot overwrite a failed pending player");
+    assert.equal(host.placeScenePreview(200), false); assert.equal(surfaces[0].disposed, 1);
+
+    await host._beginScenePreview(); host._tickScenePreview(300);
+    assert.equal(host.placeScenePreview(300), true); assert.equal(host.nodeList.length, 1);
+    const player = host._mountedScenePreviewPlayer;
+    assert.equal(player.instances[0].object.children.length, 0, "audio has no hit-test mesh");
+    assert.equal(player.state, "playing");
+    host.toggleScenePreviewPlayback(); assert.equal(player.state, "paused"); assert.equal(surfaces[1].calls.at(-1)[1], false);
+    host.toggleScenePreviewPlayback(); assert.equal(player.state, "playing");
+    host.nodeList[0].tick(5); assert.equal(player.state, "ended");
+    host.toggleScenePreviewPlayback(); assert.equal(player.state, "playing"); near(player.time, 0);
+    host.nodeList[0].tick(1); host.restartScenePreviewPlayback(); near(player.time, 0);
+    assert.ok(events.some(event => event.type === "sceneplayback" && event.state === "paused"));
+    assert.ok(events.some(event => event.type === "sceneplayback" && event.state === "ended"));
+    host._retrievalPaused = true; host.toggleScenePreviewPlayback(); assert.equal(player.state, "playing", "background controls do not change playback"); host._retrievalPaused = false;
+    contexts[1].onError(new Error("mounted audio failed"));
+    assert.equal(host.nodeList.length, 0); assert.equal(host.shadowRoot.children.length, 0);
+    assert.equal(host._mountedScenePreviewPlayer, null); assert.equal(host._scenePreviewState, "error");
+    assert.equal(player.state, "disposed"); assert.equal(surfaces[1].disposed, 1);
+    host.toggleScenePreviewPlayback(); host.restartScenePreviewPlayback();
+
+    host._scenePreviewMode = false;
+    const asset = { id: manifest.assetId, file_type: "scene", _contentEpoch: 1 };
+    await host._placeAsset(asset); assert.equal(host.nodeList.length, 1, "failed scene leaves its queue slot reusable");
+    contexts[2].onError(new Error("map audio failed"));
+    assert.equal(host.nodeList.length, 0); assert.equal(errors.length, 1); assert.match(errors[0].error.message, /map audio failed/);
+    assert.equal(contextDisposals, 3); assert.ok(surfaces.every(surface => surface.disposed === 1));
+    console.log("PASS audio-only transport, pending error stability, mounted failure queue cleanup and per-player media context release");
   }
 
   // Real AR component hide/show and detach/re-enter drive the real runtime clock,

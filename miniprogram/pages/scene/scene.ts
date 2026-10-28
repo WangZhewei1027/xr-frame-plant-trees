@@ -1,6 +1,6 @@
 import { CONFIG, isSceneConfig } from "../../utils/backend";
 Page({
-  data: { sceneId: "", organizationId: "", width: 0, height: 0, renderWidth: 0, renderHeight: 0, state: "loading", message: "正在启动 AR 相机…", invalid: false },
+  data: { sceneId: "", organizationId: "", width: 0, height: 0, renderWidth: 0, renderHeight: 0, state: "loading", playback: "paused", message: "正在启动 AR 相机…", invalid: false },
   onLoad(options: Record<string, string>) {
     const entry = options.sceneId || options.organizationId ? options : CONFIG;
     if (!isSceneConfig(entry)) {
@@ -23,6 +23,11 @@ Page({
       : { state: "loading", message: "正在启动 AR 相机…" });
     if (event.detail.state === "error") wx.showToast({ title: this.data.message, icon: "none", duration: 3000 });
   },
+  onScenePlayback(event: WechatMiniprogram.CustomEvent<{ state: string }>) {
+    this.setData({ playback: event.detail.state });
+  },
+  togglePlayback() { this.selectComponent("#preview")?.toggleScenePreviewPlayback(); },
+  restart() { this.selectComponent("#preview")?.restartScenePreviewPlayback(); },
   retry() { this.selectComponent("#preview")?.retryScenePreview(); },
   place() {
     if (this.data.state === "error" || this.data.state === "empty") this.retry();

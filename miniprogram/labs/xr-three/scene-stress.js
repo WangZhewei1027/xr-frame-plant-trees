@@ -1,11 +1,12 @@
+const { visualProbe } = require('./scene-visual-probe');
 const { createCompositionPlayer } = require('../../lib/scene-runtime/composition');
 
 // Development-only GPU/resource soak; uses the same loader and player as AR.
-async function stressScene({ manifest, cache, scene, renderer, camera, cancelled, progress, cycles = 100 }) {
+async function stressScene({ manifest, cache, scene, renderer, camera, canvas, cancelled, progress, cycles = 100 }) {
   const samples = [];
   for (let i = 0; i < cycles; i++) {
     if (cancelled()) throw new Error('循环验收已取消');
-    const player = createCompositionPlayer(JSON.parse(JSON.stringify(manifest)), { modelCache: cache });
+    const player = createCompositionPlayer(JSON.parse(JSON.stringify(manifest)), { modelCache: cache, canvas });
     try {
       await player.load();
       if (cancelled()) throw new Error('循环验收已取消');
@@ -15,8 +16,10 @@ async function stressScene({ manifest, cache, scene, renderer, camera, cancelled
       const paused = player.time; player.update(0.5);
       if (player.time !== paused) throw new Error('暂停时仍推进');
       player.play(); player.update(0.75); player.restart(); player.update(0.5);
+      const probe = visualProbe(manifest);
+      player.pause(); player.seek(probe.time);
       renderer.render(scene, camera);
-      if (!renderer.info.render.triangles) throw new Error('没有渲染模型');
+      if (probe.visual && !renderer.info.render.triangles) throw new Error('没有渲染模型');
     } finally {
       scene.remove(player.root); player.dispose();
       // Flush Three's previous render list so it cannot retain the last clones.
