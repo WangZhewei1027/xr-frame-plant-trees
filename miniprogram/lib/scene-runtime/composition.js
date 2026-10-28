@@ -1,10 +1,12 @@
 // composition 播放器（scene asset）：GLB 编排 + 统一时间轴。
-//   结构：sceneRoot(root，由宿主放置) → [groupRoot（schema 5 分组变换，可嵌套）] → instanceRoot（JSON 变换） → GLB 子树（ModelCache clone）
+//   结构：sceneRoot(root，由宿主放置) → [groupRoot（schema 5 分组变换，可嵌套）] → instanceRoot（JSON 变换）
+//         → pivot（底部中心对齐，与单素材 AR 放置一致） → GLB 子树（ModelCache clone）
 //   每个实例独立 acquire 一份 ModelCache 句柄（cloneSkinned 副本），dispose 时逐个 release。
 //   不归一化尺寸、不读 scale_multiplier；只应用 position/rotation/scale。
 const { THREE } = require("../three-runtime/runtime");
 const { createSceneCore, clipTime: coreClipTime } = require("./vendor/scene-core");
 const { disposeTree } = require("../three-runtime/resources");
+const { groundOffset } = require("../three-runtime/pivot");
 
 /**
  * 局部时间 → clip 时间。
@@ -231,7 +233,12 @@ function createCompositionPlayer(manifest, { modelCache, onState } = {}) {
         instanceRoot.position.fromArray(inst.position);
         instanceRoot.rotation.set(...inst.rotation, 'XYZ');
         instanceRoot.scale.fromArray(inst.scale);
-        instanceRoot.add(handle.object);
+        // 导入模型常带偏移的 pivot：包围盒底部中心对齐实例原点，偏移放在 mixer 驱动的子树之外。
+        const pivot = new THREE.Group();
+        pivot.name = "pivot";
+        groundOffset(handle.object, pivot.position);
+        pivot.add(handle.object);
+        instanceRoot.add(pivot);
         (groups.get(inst.parent) || root).add(instanceRoot);
         instances.push({
           id: inst.id,

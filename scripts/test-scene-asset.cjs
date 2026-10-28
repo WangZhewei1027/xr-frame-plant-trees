@@ -146,7 +146,7 @@ function compositionManifest(o = {}) {
 }
 
 /** Fake ModelCache: counts acquire/release, builds a fresh clone-like Group per acquire. */
-function fakeCache(THREE, { failing = new Set(), defer = false } = {}) {
+function fakeCache(THREE, { failing = new Set(), defer = false, offset = null } = {}) {
   const stats = { acquires: 0, releases: 0, live: 0, pending: [] };
   const moveClip = new THREE.AnimationClip("move", 2, [
     new THREE.VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 2, 0, 0]),
@@ -162,7 +162,9 @@ function fakeCache(THREE, { failing = new Set(), defer = false } = {}) {
     stats.live++;
     const object = new THREE.Group();
     object.userData.sharedModel = true;
-    object.add(new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial()));
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial());
+    if (offset) mesh.position.fromArray(offset);
+    object.add(mesh);
     let released = false;
     return {
       object,
@@ -352,6 +354,22 @@ async function main() {
     player.restart(); near(group.position.x, 0, "restart");
     player.dispose(); assert.equal(cache.stats.live, 0);
     console.log("PASS native Core transform tracks, clip coexistence, pause/end/restart and cleanup");
+  }
+
+  // Offset pivots (Sketchfab/FBX exports) are grounded at the bottom-center, like single-asset AR placement.
+  {
+    const cache = fakeCache(THREE, { offset: [-3, 0.2, 3.3] });
+    const player = createCompositionPlayer(compositionManifest(), { modelCache: cache });
+    await player.load(); assert.equal(player.state, "ready");
+    const entry = player.instances[0];
+    assert.equal(entry.object.parent.name, "pivot"); assert.equal(entry.object.parent.parent, entry.instanceRoot);
+    player.root.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(entry.instanceRoot);
+    near(bounds.min.y, 0, "model base sits on the instance origin", 1e-6);
+    near((bounds.min.x + bounds.max.x) / 2, entry.instanceRoot.position.x, "centered on x", 1e-6);
+    near((bounds.min.z + bounds.max.z) / 2, entry.instanceRoot.position.z, "centered on z", 1e-6);
+    player.dispose(); assert.equal(cache.stats.live, 0);
+    console.log("PASS offset model pivots are grounded at the bottom-center");
   }
 
   // Schema 5 groups are animated transform parents; members keep local transforms.
@@ -639,7 +657,8 @@ async function main() {
     assert.equal(entry.repulsionEnabled, false);
     near(entry.node.position.y, 0);
     near(entry.node.position.z, -2);
-    const model = entry.node.children[0].children[0];
+    // scene root → instanceRoot → pivot → model
+    const model = entry.node.children[0].children[0].children[0];
     entry.tick(1);
     near(model.position.x, 1);
     entry.onTap(); entry.tick(1);
