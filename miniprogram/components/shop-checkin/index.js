@@ -1,214 +1,184 @@
-import { CONFIG, backendRpc } from "../../utils/backend";
+import { fetchActivityProgress, submitActivityRecord } from "../../utils/backend";
+import { activityDistance, activityParticipantId, activityRequestKey, validActivityLocation, withinActivityScope } from "../../utils/activity-state";
 
-/** Haversine 公式计算两点间距离（米） */
-function getDistanceMeters(lat1, lng1, lat2, lng2) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/** Haversine 方位角：正北=0，顺时针，度 */
+/** Haversine bearing: north = 0, clockwise, degrees. */
 function getBearing(lat1, lng1, lat2, lng2) {
   const toRad = (d) => (d * Math.PI) / 180;
   const dLng = toRad(lng2 - lng1);
   const y = Math.sin(dLng) * Math.cos(toRad(lat2));
-  const x =
-    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
-    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
 Component({
   properties: {
-    /** 当前 GPS 位置，由父页面传入 { latitude, longitude } */
-    location: {
-      type: Object,
-      value: null,
-    },
-    /** 面板是否可见 */
-    visible: {
-      type: Boolean,
-      value: false,
-    },
-    /** 罗盘航向角（度），由父页面传入 */
-    compassHeading: {
-      type: Number,
-      value: 0,
-    },
+    activities: { type: Array, value: [] },
+    location: { type: Object, value: null },
+    visible: { type: Boolean, value: false },
+    compassHeading: { type: Number, value: 0 },
   },
 
   data: {
+    activeActivity: null,
+    selectedActivityIdx: 0,
     shops: [],
     shopsLoading: false,
+    progressError: "",
     selectedShopIdx: 0,
-    // 打卡弹窗
     showCheckinModal: false,
     checkinImageUrl: "",
     checkinShopName: "",
-    // 已打卡记录（持久化到 storage）
-    checkedInShopIds: {},
-    // 导航 UI
+    checkedPointIds: {},
+    submittingPointId: "",
     isNavigating: false,
     navShopName: "",
     navDistance: "",
     navRelAngle: 0,
-    // 打卡进度
     checkedInCount: 0,
   },
 
   lifetimes: {
-    attached() {
-      // 从 storage 恢复打卡记录
-      try {
-        const saved = wx.getStorageSync("checkedInShopIds");
-        if (saved && typeof saved === "object") {
-          this.setData({ checkedInShopIds: saved });
-        }
-      } catch (e) {
-        console.error("[打卡] 读取缓存失败:", e);
-      }
-    },
+    attached() { this._detached = false; this._selectActivity(); },
+    detached() { this._detached = true; this._progressRequest = (this._progressRequest || 0) + 1; },
   },
 
   observers: {
-    /** visible 变为 true 时自动加载店铺 */
-    visible(val) {
-      if (val && this.data.shops.length === 0) {
-        this.loadShops();
-      } else if (val) {
-        this._refreshDistances();
-      }
-      if (!val) {
-        this.setData({ isNavigating: false });
-      }
+    activities() { this._selectActivity(); },
+    visible(value) {
+      if (value) { this._refreshDistances(); void this.loadProgress(); }
+      else { this.setData({ isNavigating: false }); this.triggerEvent("navchange", { shop: null }); }
     },
-    /** location 变化时刷新距离 */
-    location() {
-      if (this.data.visible && this.data.shops.length > 0) {
-        this._refreshDistances();
-      }
-    },
-    /** compassHeading 变化时刷新导航 UI */
-    compassHeading() {
-      this._refreshNavUI();
-    },
-    /** 打卡记录或店铺列表变化时更新计数 */
-    "checkedInShopIds, shops"() {
-      const ids = this.data.checkedInShopIds || {};
-      const shops = this.data.shops || [];
-      let count = 0;
-      for (let i = 0; i < shops.length; i++) {
-        if (ids[shops[i].id]) count++;
-      }
-      this.setData({ checkedInCount: count });
-    },
+    location() { this._refreshDistances(); },
+    compassHeading() { this._refreshNavUI(); },
   },
 
   methods: {
-    // ========== 店铺加载 ==========
+    _selectActivity(index) {
+      const activities = this.properties.activities || [];
+      if (index === undefined) index = Math.max(0, activities.findIndex((activity) => activity.id === this.data.activeActivity?.id));
+      const activeActivity = activities[index] || null;
+      const sameActivity = activeActivity && activeActivity.id === this.data.activeActivity?.id;
+      const selectedPointId = sameActivity ? this.data.shops[this.data.selectedShopIdx]?.point_id : null;
+      const selectedShopIdx = Math.max(0, (activeActivity?.points || []).findIndex((point) => point.point_id === selectedPointId));
+      const wasNavigating = sameActivity && this.data.isNavigating;
+      this._progressRequest = (this._progressRequest || 0) + 1;
+      if (!sameActivity) this._serverPointIds = [];
+      this.setData({ activeActivity, selectedActivityIdx: index, selectedShopIdx, shopsLoading: false, progressError: "", isNavigating: false,
+        shops: this._computeDistances(activeActivity?.points || [], activeActivity), checkedPointIds: {}, checkedInCount: 0 });
+      this._applyProgress();
+      if (wasNavigating && this.data.shops[selectedShopIdx]) this._activateNavigation(this.data.shops[selectedShopIdx]);
+      else this.triggerEvent("navchange", { shop: null });
+      if (this.properties.visible) void this.loadProgress();
+    },
 
-    async loadShops() {
-      this.setData({ shopsLoading: true });
+    onActivityChange(event) {
+      if (this.data.submittingPointId) return;
+      const index = Number(event.detail.value);
+      if (this.properties.activities[index]) this._selectActivity(index);
+    },
+
+    _applyProgress() {
+      const server = new Set(this._serverPointIds || []);
+      const checkedPointIds = {};
+      let checkedInCount = 0;
+      for (const point of this.data.shops) {
+        if (server.has(point.point_id)) checkedPointIds[point.point_id] = true;
+        if (checkedPointIds[point.point_id]) checkedInCount++;
+      }
+      this.setData({ checkedPointIds, checkedInCount });
+    },
+
+    async loadProgress() {
+      const activity = this.data.activeActivity;
+      if (!activity) return;
+      const requestId = (this._progressRequest || 0) + 1;
+      this._progressRequest = requestId;
+      this.setData({ shopsLoading: true, progressError: "" });
       try {
-        const { statusCode, data } = await backendRpc("get_shop_assets", {
-          p_workspace_id: CONFIG.workspaceId,
-          p_organization_id: CONFIG.organizationId,
-        });
-        if (statusCode !== 200 || !Array.isArray(data)) {
-          throw new Error(`获取店铺失败: ${statusCode}`);
-        }
-        const shops = this._computeDistances(data);
-        this.setData({ shops });
-        if (shops.length > 0) {
-          this._activateNavigation(shops[0]);
-        }
-      } catch (err) {
-        console.error("[店铺] 加载错误:", err);
-        wx.showToast({ title: "加载店铺失败", icon: "error" });
+        const response = await fetchActivityProgress(activity.id, activityParticipantId());
+        if (response.statusCode !== 200 || !Array.isArray(response.data?.point_ids) || response.data.point_ids.some((id) => typeof id !== "string")) throw new Error("打卡进度加载失败");
+        if (this._detached || requestId !== this._progressRequest) return;
+        this._serverPointIds = response.data.point_ids;
+        this._applyProgress();
+        const point = this.data.shops[this.data.selectedShopIdx];
+        if (this.properties.visible && point) this._activateNavigation(point);
+      } catch (error) {
+        if (this._detached || requestId !== this._progressRequest) return;
+        console.error("[活动打卡] 进度加载失败:", error);
+        this.setData({ progressError: "打卡进度加载失败，点击重试" });
       } finally {
-        this.setData({ shopsLoading: false });
+        if (!this._detached && requestId === this._progressRequest) this.setData({ shopsLoading: false });
       }
     },
 
-    // ========== 距离计算 ==========
-
-    _computeDistances(shops) {
-      const loc = this.properties.location;
-      if (!loc) {
-        return shops.map((s) => ({
-          ...s,
-          distance: undefined,
-          canCheckin: false,
-        }));
-      }
-      return shops.map((s) => {
-        const dist = getDistanceMeters(
-          loc.latitude,
-          loc.longitude,
-          s.latitude,
-          s.longitude,
-        );
-        return { ...s, distance: Math.round(dist), canCheckin: dist <= 50 };
+    _computeDistances(points, activity = this.data.activeActivity) {
+      const location = this.properties.location;
+      const inScope = withinActivityScope(activity, location);
+      return points.map((point) => {
+        const distance = activityDistance(location, point);
+        return { ...point, distance: distance === null ? undefined : Math.round(distance),
+          hasLocation: validActivityLocation(point),
+          canCheckin: inScope && distance !== null && distance <= (activity?.config.checkinRadiusMeters || 50) };
       });
     },
 
     _refreshDistances() {
-      if (this.data.shops.length === 0) return;
-      const shops = this._computeDistances(this.data.shops);
-      this.setData({ shops });
+      if (!this.data.activeActivity) return;
+      this.setData({ shops: this._computeDistances(this.data.shops) });
       this._refreshNavUI();
     },
 
-    // ========== 打卡 ==========
-
-    onCheckin(e) {
-      const idx = e.currentTarget.dataset.idx;
-      const shop = this.data.shops[idx];
-      if (!shop) return;
-
-      const checkinUrl = shop.metadata && shop.metadata.checkin_url;
-      if (!checkinUrl) {
-        wx.showToast({ title: "该店铺暂无打卡图", icon: "none" });
+    async onCheckin(event) {
+      if (this.data.submittingPointId) return;
+      const point = this.data.shops[event.currentTarget.dataset.idx];
+      const activity = this.data.activeActivity;
+      if (!point || !activity) return;
+      const previous = this.data.checkedPointIds[point.point_id];
+      if (previous) { this._showReward(point); return; }
+      const location = this.properties.location;
+      // Re-evaluate current GPS at submission; distance is only a UI hint, server verifies again.
+      const distance = activityDistance(location, point);
+      if (!withinActivityScope(activity, location) || distance === null || distance > (activity.config.checkinRadiusMeters || 50)) {
+        wx.showToast({ title: !point.hasLocation ? "此打卡点尚未设置位置" : "请靠近打卡点后再试", icon: "none" });
         return;
       }
-
-      const alreadyCheckedIn = !!this.data.checkedInShopIds[shop.id];
-      if (!alreadyCheckedIn && !shop.canCheckin) {
-        wx.showToast({ title: "距离店铺太远，请靠近后再试", icon: "none" });
-        return;
+      const intentKey = `${activity.id}:${point.point_id}`;
+      this._checkinIntents = this._checkinIntents || {};
+      let intent = this._checkinIntents[intentKey];
+      if (!intent) {
+        intent = { placement_id: activity.id, point_id: point.point_id, kind: "checkin", user_lat: location.latitude, user_lng: location.longitude,
+          participant_id: activityParticipantId(), idempotency_key: activityRequestKey() };
+        this._checkinIntents[intentKey] = intent;
       }
-
-      // 首次打卡：持久化记录
-      if (!alreadyCheckedIn) {
-        const updated = Object.assign({}, this.data.checkedInShopIds, {
-          [shop.id]: true,
-        });
-        this.setData({ checkedInShopIds: updated });
-        try {
-          wx.setStorageSync("checkedInShopIds", updated);
-        } catch (err) {
-          console.error("[打卡] 写入缓存失败:", err);
+      this.setData({ submittingPointId: point.id });
+      // A progress response started before this write must not undo its confirmation.
+      this._progressRequest = (this._progressRequest || 0) + 1;
+      try {
+        const response = await submitActivityRecord(intent);
+        if (response.statusCode !== 200 || typeof response.data?.id !== "string") {
+          if (response.statusCode >= 400 && response.statusCode < 500) delete this._checkinIntents[intentKey];
+          throw new Error(response.data?.error || "打卡失败");
         }
+        delete this._checkinIntents[intentKey];
+        if (this._detached || this.data.activeActivity?.id !== activity.id) return;
+        this._progressRequest = (this._progressRequest || 0) + 1;
+        this._serverPointIds = [...new Set([...(this._serverPointIds || []), point.point_id])];
+        this._applyProgress();
+        this._showReward(point);
+      } catch (error) {
+        console.error("[活动打卡] 提交失败:", error);
+        if (!this._detached) wx.showToast({ title: "打卡失败，请重试", icon: "none" });
+      } finally {
+        if (!this._detached) this.setData({ submittingPointId: "", shopsLoading: false });
       }
+    },
 
-      this.setData({
-        showCheckinModal: true,
-        checkinImageUrl: checkinUrl,
-        checkinShopName: shop.name,
-      });
+    _showReward(point) {
+      this.setData({ showCheckinModal: true, checkinImageUrl: point.reward_url || "", checkinShopName: point.name });
     },
 
     closeCheckinModal() {
-      this.setData({
-        showCheckinModal: false,
-        checkinImageUrl: "",
-        checkinShopName: "",
-      });
+      this.setData({ showCheckinModal: false, checkinImageUrl: "", checkinShopName: "" });
     },
 
     saveCheckinImage() {
@@ -260,6 +230,11 @@ Component({
     // ========== 导航 ==========
 
     _activateNavigation(shop) {
+      if (!validActivityLocation(shop)) {
+        this.setData({ isNavigating: false });
+        this.triggerEvent("navchange", { shop: null });
+        return;
+      }
       this.setData({
         isNavigating: true,
         navShopName: shop.name,
@@ -274,7 +249,7 @@ Component({
       if (!this.data.isNavigating) return;
       const loc = this.properties.location;
       const shop = this.data.shops[this.data.selectedShopIdx];
-      if (!loc || !shop) return;
+      if (!validActivityLocation(loc) || !validActivityLocation(shop)) return;
 
       const bearing = getBearing(
         loc.latitude,
@@ -286,12 +261,7 @@ Component({
       let relAngle = bearing - compass;
       relAngle = ((relAngle + 540) % 360) - 180;
 
-      const dist = getDistanceMeters(
-        loc.latitude,
-        loc.longitude,
-        shop.latitude,
-        shop.longitude,
-      );
+      const dist = activityDistance(loc, shop);
       this.setData({
         navRelAngle: Math.round(relAngle),
         navDistance: `${Math.round(dist)}m`,

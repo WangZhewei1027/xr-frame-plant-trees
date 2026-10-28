@@ -1,8 +1,8 @@
 // 后端访问层：小程序只和 Web 平台的公开接口 /api/miniapp/* 通信
 // （服务端文档：sanlinlaojie/docs/miniapp-api.md），不再直连数据库。
-// 接口的参数名与返回结构和原先的 Supabase RPC / 表查询完全一致，
-// 调用方只需换函数名，渲染逻辑不变。
+// 素材发现与活动参与使用独立接口；只有最终的 AR 渲染复用现有展示器。
 import { resolveBackendBaseUrl } from "./backend-environment";
+import type { ActivityLocation, ActivitySubmission } from "./activity-state";
 
 // 开发版连接本地 Web；体验版／正式版保留线上后端。识别上传也使用此地址。
 // 地址配置与真机开发说明见 backend-environment.ts 和 docs/local-development.md。
@@ -216,7 +216,7 @@ function request<T>(
 export interface OrganizationSummary {
   id: string;
   name: string;
-  /** 只包含小程序会用到的键：confetti_enabled / shop_checkin_enabled / footer_enabled / text_asset_miniapp_style */
+  /** 只包含小程序会用到的展示配置；活动入口来自活动投放。 */
   config: Record<string, unknown>;
 }
 
@@ -254,8 +254,6 @@ const RPC_PATHS = {
   get_nearby_assets: "/assets/nearby",
   get_scene_asset: "/assets/scene",
   get_huge_assets: "/assets/huge",
-  get_shop_assets: "/shops",
-  upload_text_asset: "/text-assets",
 } as const;
 
 export type RpcName = keyof typeof RPC_PATHS;
@@ -271,4 +269,22 @@ export function backendRpc<T = any>(
 /** Direct saved-scene preview. It never changes the selected map collection. */
 export function fetchScenePreview(sceneId: string, organizationId: string): Promise<ApiResponse<any>> {
   return request("/scenes/preview", "POST", { scene_id: sceneId, organization_id: organizationId });
+}
+
+/** Activities belong to the selected map deployment, independent of the asset catalog. */
+export function fetchActivities(workspaceId: string | undefined, organizationId: string): Promise<ApiResponse<unknown>> {
+  const workspace = workspaceId ? `workspace_id=${encodeURIComponent(workspaceId)}&` : "";
+  return request(`/activities?${workspace}organization_id=${encodeURIComponent(organizationId)}`, "GET");
+}
+
+export function fetchActivityProgress(placementId: string, participantId: string): Promise<ApiResponse<{ point_ids?: unknown; error?: string }>> {
+  return request(`/activity-progress?placement_id=${encodeURIComponent(placementId)}&participant_id=${encodeURIComponent(participantId)}`, "GET");
+}
+
+export function fetchActivityRecords(placementId: string, location: ActivityLocation, radiusMeters: number): Promise<ApiResponse<unknown>> {
+  return request(`/activity-records?placement_id=${encodeURIComponent(placementId)}&user_lat=${location.latitude}&user_lng=${location.longitude}&max_distance_meters=${radiusMeters}`, "GET");
+}
+
+export function submitActivityRecord(input: ActivitySubmission): Promise<ApiResponse<{ id?: string; error?: string }>> {
+  return request("/activity-records", "POST", input);
 }

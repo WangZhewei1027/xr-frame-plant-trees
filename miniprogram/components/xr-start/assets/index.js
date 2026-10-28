@@ -28,6 +28,7 @@ module.exports = function (XR_CONFIG) {
     async fetchNearbyAssets() {
       if (this._disposed || this._retrievalPaused) return;
       if (this.retrievalMode === "anchor") return this.recognizeAnchor();
+      void this.refreshActivityContent?.();
       if (this.isFetchingAssets || !this.currentGPS) return;
       const epoch = this._modeEpoch;
       this.isFetchingAssets = true;

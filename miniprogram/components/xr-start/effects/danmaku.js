@@ -1,12 +1,13 @@
 const { THREE } = require("../../../lib/three-runtime/runtime");
 const { createTextAsset } = require("../../../lib/three-runtime/text");
 module.exports = () => ({
-  showDanmakuInXR(text) {
+  showDanmakuInXR(text, record) {
     if (
       this.retrievalMode === "anchor" ||
       this._retrievalPaused ||
       this._disposed ||
-      !this._arReady
+      !this._arReady ||
+      !record || typeof record.id !== "string" || typeof record.placement_id !== "string"
     )
       return;
     const camera = this._runtime.camera;
@@ -18,7 +19,15 @@ module.exports = () => ({
     node.position.copy(start);
     node.scale.setScalar(0.15);
     this.shadowRoot.add(node);
-    const entry = this._registerNode(null, node, node, { type: "danmaku" });
+    const id = `activity:${record.id}`;
+    this._activityRecordIds = this._activityRecordIds || new Set();
+    this._activityRecordIds.add(id);
+    this._activityRecordPlacements = this._activityRecordPlacements || new Map();
+    this._activityRecordPlacements.set(id, record.placement_id);
+    this._allowedAssetIds.add(id);
+    this._activityRevision = (this._activityRevision || 0) + 1;
+    this._activityNextFetch = 1;
+    const entry = this._registerNode(id, node, node, { type: "danmaku", contentEpoch: this._contentEpoch });
     if (!entry._destroyed)
       this.flyingDanmakus.push({ node, start, end, at: Date.now() });
   },

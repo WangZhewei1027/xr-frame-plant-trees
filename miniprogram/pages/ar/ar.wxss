@@ -162,6 +162,13 @@ page {
   height: 40rpx;
 }
 
+.activity-heading { padding: 14rpx 24rpx; color: #fff; font-size: 26rpx; background: rgba(30, 30, 30, 0.88); }
+.activity-picker { min-height: 64rpx; display: flex; align-items: center; text-decoration: underline; }
+.activity-status { display: block; color: #ddd; font-size: 23rpx; line-height: 36rpx; }
+.activity-retry { margin: 12rpx 0 0; padding: 10rpx 20rpx; color: #fff; background: rgba(255, 255, 255, 0.12); font-size: 25rpx; }
+.activity-retry::after { border: none; }
+.shop-activity-label { flex: 1; color: #fff; font-size: 28rpx; }
+
 /* 与 AR 画面保持足够对比，使用原生按钮提供明确的触摸区域。 */
 .retrieval-panel {
   padding: 16rpx 24rpx 12rpx;

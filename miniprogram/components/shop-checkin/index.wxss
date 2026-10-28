@@ -272,3 +272,7 @@
   font-size: 22rpx;
   margin-top: 4rpx;
 }
+.shop-activity-picker, .shop-activity-title { display: block; padding: 16rpx 28rpx; font-size: 28rpx; color: #fff; }
+.shop-activity-picker { min-height: 64rpx; line-height: 64rpx; text-decoration: underline; }
+.shop-progress-retry { margin: 8rpx 28rpx; padding: 8rpx 16rpx; color: #fff; background: rgba(255, 255, 255, 0.14); font-size: 25rpx; }
+.shop-progress-retry::after { border: none; }

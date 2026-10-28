@@ -11,6 +11,7 @@
     height="{{renderHeight}}"
     style="width:{{width}}px;height:{{height}}px;"
     bind:orgconfigload="onOrgConfigLoad"
+    bind:activitiesload="onActivitiesLoad"
     bind:recognitionstatus="onRecognitionStatus"
     bind:recognitionframe="onRecognitionFrame"
     bind:asseterror="onAssetError"
@@ -23,6 +24,7 @@
     <block wx:if="{{shopCheckinEnabled}}">
       <shop-checkin
         id="shop-checkin"
+        activities="{{shopActivities}}"
         visible="{{showShopPanel}}"
         location="{{location}}"
         compass-heading="{{compassHeading}}"
@@ -37,10 +39,22 @@
       </view>
       <text class="retrieval-status">{{retrievalMode === 'gps' ? '根据附近位置直接显示素材' : recognitionStatus}}</text>
       <button wx:if="{{retrievalMode === 'anchor'}}" class="recognition-preview-button" disabled="{{!recognitionFramePath}}" bindtap="onPreviewRecognitionFrame">查看识别画面</button>
+      <text wx:if="{{activitiesLoading}}" class="activity-status">活动加载中…</text>
+      <button wx:if="{{activitiesError}}" class="activity-retry" bindtap="refreshActivities">{{activitiesError}}</button>
     </view>
 
-    <!-- 弹幕输入栏（始终可见） -->
-    <view class="danmaku-bar">
+    <view wx:if="{{activeDanmaku}}" class="activity-heading">
+      <picker wx:if="{{danmakuActivities.length > 1}}" range="{{danmakuActivities}}" range-key="display_name" value="{{selectedDanmakuIdx}}" disabled="{{isSubmitting}}" bindchange="onDanmakuActivityChange" aria-label="选择留言活动">
+        <view class="activity-picker">{{activeDanmaku.display_name}} · 切换活动</view>
+      </picker>
+      <text wx:else>{{activeDanmaku.display_name}}</text>
+      <text wx:if="{{retrievalMode !== 'gps'}}" class="activity-status">切换到 GPS 模式后可留言</text>
+      <text wx:elif="{{!location}}" class="activity-status">等待定位后可留言</text>
+      <text wx:elif="{{!danmakuInRange}}" class="activity-status">进入活动范围后可留言</text>
+    </view>
+
+    <!-- 入口来自当前地图启用的活动投放。 -->
+    <view wx:if="{{activeDanmaku || shopCheckinEnabled}}" class="danmaku-bar">
 
       <!-- GPS 调试小窗（点灯泡开关） -->
       <view wx:if="{{showGpsDebug}}" class="gps-debug-pop">
@@ -57,22 +71,29 @@
         <view class="gps-dot {{location ? 'gps-ok' : 'gps-fail'}}"></view>
       </view>
       <input
+        wx:if="{{activeDanmaku}}"
         class="danmaku-input"
         placeholder="发个弹幕到AR世界~"
         value="{{textContent}}"
         bindinput="onTextInput"
-        maxlength="200"
+        maxlength="{{danmakuLimit}}"
+        disabled="{{isSubmitting}}"
         confirm-type="send"
         bindconfirm="submitText"
       />
       <view
+        wx:if="{{activeDanmaku}}"
         class="danmaku-send {{canSubmit ? 'active' : ''}}"
         bindtap="submitText"
+        aria-role="button"
+        aria-label="{{isSubmitting ? '发送中' : '发送留言'}}"
+        aria-disabled="{{!canSubmit}}"
       >
         <image class="send-icon" src="/assets/send.svg" mode="aspectFit" />
       </view>
-      <view wx:if="{{shopCheckinEnabled}}" class="bar-divider"></view>
-      <view wx:if="{{shopCheckinEnabled}}" class="shop-toggle {{showShopPanel ? 'shop-toggle-on' : ''}}" bindtap="toggleShopPanel">
+      <view wx:if="{{activeDanmaku && shopCheckinEnabled}}" class="bar-divider"></view>
+      <text wx:if="{{!activeDanmaku && shopCheckinEnabled}}" class="shop-activity-label">店铺打卡活动</text>
+      <view wx:if="{{shopCheckinEnabled}}" class="shop-toggle {{showShopPanel ? 'shop-toggle-on' : ''}}" bindtap="toggleShopPanel" aria-role="button" aria-label="{{showShopPanel ? '收起打卡活动' : '打开打卡活动'}}">
         <image class="shop-toggle-icon" src="/assets/circle-check-big.svg" mode="aspectFit" />
       </view>
     </view>

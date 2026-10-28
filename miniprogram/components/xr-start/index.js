@@ -6,12 +6,14 @@ const matching = require("./matching/index");
 const { CONFIG, fetchOrganizations } = require("../../utils/backend");
 const { THREE } = require("../../lib/three-runtime/runtime");
 const { ARRuntime } = require("../../lib/three-runtime/ar-runtime");
+const { groundOffset } = require("../../lib/three-runtime/pivot");
 const {
   ModelCache,
   disposeTree,
 } = require("../../lib/three-runtime/resources");
 const { instantiateModel } = require("./assets/model");
 const assetsMethods = require("./assets/index")(XR_CONFIG);
+const activityMethods = require("./activities")(XR_CONFIG);
 const danmakuMethods = require("./effects/danmaku")(XR_CONFIG);
 const repulsionMethods = require("./effects/repulsion")(XR_CONFIG);
 const hugeMethods = require("./assets/huge")(XR_CONFIG);
@@ -48,6 +50,11 @@ function buildInitialState() {
     firstFetchDone: false,
     currentGPS: null,
     isFetchingAssets: false,
+    _activityRecordIds: new Set(),
+    _activityNextFetch: 0,
+    _activityRevision: 0,
+    _activityFetch: null,
+    _activityFetchEpoch: null,
     // 导航状态
     _navTarget: null,
     _navActive: false,
@@ -196,6 +203,7 @@ Component({
     ...gps,
     ...matching,
     ...assetsMethods,
+    ...activityMethods,
     ...danmakuMethods,
     ...repulsionMethods,
     ...navigation,
@@ -280,6 +288,8 @@ Component({
         if (Date.now() >= this._nextRecognitionAt) this.recognizeAnchor();
         return;
       }
+      // Activities can be paused or moderated while the visitor stands still.
+      if (this._activityNextFetch) void this.refreshActivityContent?.();
       const displacement = Math.hypot(
           camPos.x - this._fetchAnchorXZ.x,
           camPos.z - this._fetchAnchorXZ.z,
@@ -379,13 +389,7 @@ Component({
         const instance = instantiateModel(handle, 0.3);
         // Imported models may have an offset pivot. Keep the ground alignment
         // outside the animated model so AnimationMixer cannot overwrite it.
-        const bounds = new THREE.Box3().setFromObject(instance.root);
-        if (!bounds.isEmpty())
-          instance.root.position.set(
-            -(bounds.min.x + bounds.max.x) / 2,
-            -bounds.min.y,
-            -(bounds.min.z + bounds.max.z) / 2,
-          );
+        groundOffset(instance.root, instance.root.position);
         const placement = new THREE.Group();
         placement.add(instance.root);
         matrix.decompose(
@@ -480,11 +484,8 @@ Component({
             this.stopRandomConfetti();
           }
 
-          // 将店铺打卡/页脚开关向上抛给 ar 页面（bind:orgconfigload）。
-          // 与 confetti_enabled 同语义：页面用 === true 判定，
-          // 缺省(undefined)按“默认关”，显式 true 才显示。
+          // Activity entry points are supplied by the activity discovery endpoint.
           this.triggerEvent("orgconfigload", {
-            shopCheckinEnabled: cfg.shop_checkin_enabled,
             footerEnabled: cfg.footer_enabled,
           });
         } else {

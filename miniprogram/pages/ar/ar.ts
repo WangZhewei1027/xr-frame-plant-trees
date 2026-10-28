@@ -1,4 +1,8 @@
-import { CONFIG, backendRpc } from "../../utils/backend";
+import { CONFIG, fetchActivities, submitActivityRecord } from "../../utils/backend";
+import {
+  acceptActivityDiscovery, activityParticipantId, activityRequestKey, danmakuMaxLength, nextActivityDiscoverySequence, parseActivityPlacements, withinActivityScope,
+  type ActivityPlacement, type ActivitySubmission,
+} from "../../utils/activity-state";
 
 interface LocationData {
   latitude: number;
@@ -22,6 +26,14 @@ Page({
     canSubmit: false,
     showShopPanel: false,
     shopCheckinEnabled: false,
+    shopActivities: [] as ActivityPlacement[],
+    danmakuActivities: [] as ActivityPlacement[],
+    activeDanmaku: null as ActivityPlacement | null,
+    selectedDanmakuIdx: 0,
+    danmakuLimit: 200,
+    danmakuInRange: false,
+    activitiesLoading: false,
+    activitiesError: "",
     footerEnabled: false,
     compassHeading: 0,
     showGpsDebug: false,
@@ -45,6 +57,7 @@ Page({
       recognitionStatus: "等待 AR 相机就绪",
     });
     this.selectComponent("#main-frame")?.setRetrievalMode(mode);
+    this.refreshCanSubmit();
   },
 
   onAssetError(event: WechatMiniprogram.CustomEvent) {
@@ -90,10 +103,14 @@ Page({
   },
 
   onHide() {
+    (this as any)._activityVisible = false;
+    (this as any)._activityRequest = ((this as any)._activityRequest || 0) + 1;
     this.selectComponent("#main-frame")?.pauseRetrieval();
   },
 
   onShow() {
+    (this as any)._activityVisible = true;
+    void this.refreshActivities();
     if (!this.data.showRecognitionPreview) this.selectComponent("#main-frame")?.resumeRetrieval();
   },
 
@@ -126,8 +143,8 @@ Page({
           ) => {
             this.setData({
               location: this._buildLocation(res),
-              canSubmit: this.data.textContent.trim().length > 0,
             });
+            this.refreshCanSubmit();
           };
           wx.onLocationChange((this as any)._locationListener);
         },
@@ -150,6 +167,9 @@ Page({
   },
 
   onUnload() {
+    (this as any)._unloaded = true;
+    (this as any)._activityVisible = false;
+    (this as any)._activityRequest = ((this as any)._activityRequest || 0) + 1;
     if ((this as any)._locationTimer) {
       clearInterval((this as any)._locationTimer);
       (this as any)._locationTimer = null;
@@ -169,11 +189,80 @@ Page({
   },
 
   onTextInput(e: WechatMiniprogram.Input) {
+    if (this.data.isSubmitting) return;
     const textContent = e.detail.value;
-    this.setData({
-      textContent,
-      canSubmit: textContent.trim().length > 0 && this.data.location !== null,
-    });
+    if (textContent !== this.data.textContent) (this as any)._danmakuIntent = null;
+    this.setData({ textContent });
+    this.refreshCanSubmit();
+  },
+
+  async refreshActivities() {
+    const requestId = ((this as any)._activityRequest || 0) + 1;
+    (this as any)._activityRequest = requestId;
+    const workspaceId = CONFIG.workspaceId;
+    const organizationId = CONFIG.organizationId;
+    if (!organizationId || CONFIG.sceneId) {
+      this.setData({ shopActivities: [], danmakuActivities: [], activeDanmaku: null, shopCheckinEnabled: false, showShopPanel: false, canSubmit: false, activitiesLoading: false, activitiesError: "" });
+      return;
+    }
+    this.setData({ activitiesLoading: true, activitiesError: "" });
+    const discoverySequence = nextActivityDiscoverySequence();
+    try {
+      const response = await fetchActivities(workspaceId, organizationId);
+      if (response.statusCode !== 200) throw new Error("活动加载失败");
+      const activities = parseActivityPlacements(response.data, !workspaceId);
+      if ((this as any)._unloaded || requestId !== (this as any)._activityRequest) return;
+      this.applyActivities(activities, discoverySequence);
+    } catch (error) {
+      if ((this as any)._unloaded || requestId !== (this as any)._activityRequest) return;
+      if (!this.applyActivities([], discoverySequence)) return;
+      console.error("[活动] 加载失败:", error);
+      this.setData({ shopActivities: [], danmakuActivities: [], activeDanmaku: null, shopCheckinEnabled: false, showShopPanel: false, canSubmit: false, activitiesError: "活动加载失败，点击重试" });
+      this.selectComponent("#main-frame")?.setNavigationTarget(null);
+    } finally {
+      if (!(this as any)._unloaded && requestId === (this as any)._activityRequest) this.setData({ activitiesLoading: false });
+    }
+  },
+
+  onActivitiesLoad(event: WechatMiniprogram.CustomEvent) {
+    if ((this as any)._unloaded || (this as any)._activityVisible === false) return;
+    // The XR module validates the discovery response before emitting it.
+    if (!Number.isInteger(event.detail.discoverySequence)) return;
+    if (this.applyActivities(event.detail.activities, event.detail.discoverySequence)) {
+      this.setData({ activitiesError: event.detail.error ? "活动加载失败，点击重试" : "" });
+    }
+  },
+
+  applyActivities(activities: ActivityPlacement[], discoverySequence: number): boolean {
+    if (discoverySequence < ((this as any)._appliedActivityDiscovery || 0)) return false;
+    if (!acceptActivityDiscovery(discoverySequence)) return false;
+    (this as any)._appliedActivityDiscovery = discoverySequence;
+    const shopActivities = activities.filter((activity) => activity.type === "shop_checkin");
+    const danmakuActivities = activities.filter((activity) => activity.type === "danmaku");
+    const selected = Math.max(0, danmakuActivities.findIndex((activity) => activity.id === this.data.activeDanmaku?.id));
+    const activeDanmaku = danmakuActivities[selected] || null;
+    this.setData({ shopActivities, danmakuActivities, activeDanmaku, selectedDanmakuIdx: selected, danmakuLimit: danmakuMaxLength(activeDanmaku),
+      shopCheckinEnabled: shopActivities.length > 0, showShopPanel: shopActivities.length > 0 && this.data.showShopPanel });
+    this.selectComponent("#main-frame")?.applyActivityAvailability?.(activities, discoverySequence);
+    if (!shopActivities.length) this.selectComponent("#main-frame")?.setNavigationTarget(null);
+    this.refreshCanSubmit();
+    return true;
+  },
+
+  onDanmakuActivityChange(event: WechatMiniprogram.PickerChange) {
+    if (this.data.isSubmitting) return;
+    const selectedDanmakuIdx = Number(event.detail.value);
+    const activeDanmaku = this.data.danmakuActivities[selectedDanmakuIdx];
+    if (!activeDanmaku) return;
+    (this as any)._danmakuIntent = null;
+    this.setData({ selectedDanmakuIdx, activeDanmaku, danmakuLimit: danmakuMaxLength(activeDanmaku) });
+    this.refreshCanSubmit();
+  },
+
+  refreshCanSubmit() {
+    const text = this.data.textContent.trim();
+    const danmakuInRange = withinActivityScope(this.data.activeDanmaku, this.data.location);
+    this.setData({ danmakuInRange, canSubmit: !!text && text.length <= this.data.danmakuLimit && danmakuInRange && !this.data.isSubmitting && this.data.retrievalMode === "gps" });
   },
 
   /** 把 wx.getLocation / onLocationChange 的结果统一成页面用的 LocationData */
@@ -204,8 +293,8 @@ Page({
       success: (res) => {
         this.setData({
           location: this._buildLocation(res),
-          canSubmit: this.data.textContent.trim().length > 0,
         });
+        this.refreshCanSubmit();
       },
       fail: () => {
         this.setData({ location: null, canSubmit: false });
@@ -227,44 +316,46 @@ Page({
         // 弹窗可能在回调前已被关掉，数据照常更新即可
         this.setData({
           location: this._buildLocation(res),
-          canSubmit: this.data.textContent.trim().length > 0,
         });
+        this.refreshCanSubmit();
       },
     });
   },
 
   async submitText() {
-    const { textContent, location } = this.data;
-    if (!textContent.trim() || !location) {
-      wx.showToast({ title: "请填写内容", icon: "none" });
+    if (this.data.isSubmitting) return;
+    this.refreshCanSubmit();
+    const { textContent, location, activeDanmaku } = this.data;
+    if (!this.data.canSubmit || !location || !activeDanmaku) {
+      wx.showToast({ title: !activeDanmaku ? "当前没有留言活动" : !location ? "请等待定位" : !this.data.danmakuInRange ? "请进入活动范围" : this.data.retrievalMode !== "gps" ? "请切换到 GPS 模式" : "请检查留言内容", icon: "none" });
       return;
     }
-
     const sendText = textContent.trim();
-    this.setData({ textContent: "", canSubmit: false });
-    const xrComp = this.selectComponent("#main-frame");
-    if (xrComp) {
-      xrComp.showDanmakuInXR(sendText);
+    let intent = (this as any)._danmakuIntent as ActivitySubmission | null;
+    if (!intent || intent.placement_id !== activeDanmaku.id || intent.content !== sendText) {
+      intent = { placement_id: activeDanmaku.id, kind: "danmaku", content: sendText, user_lat: location.latitude, user_lng: location.longitude,
+        participant_id: activityParticipantId(), idempotency_key: activityRequestKey() };
+      (this as any)._danmakuIntent = intent;
     }
-
-    this.setData({ isSubmitting: true });
+    this.setData({ isSubmitting: true, canSubmit: false });
     try {
-      const { statusCode } = await backendRpc("upload_text_asset", {
-        user_lat: location.latitude,
-        user_lng: location.longitude,
-        p_workspace_id: CONFIG.workspaceId,
-        p_organization_id: CONFIG.organizationId,
-        content: sendText,
-      });
-
-      if (statusCode !== 200) {
-        throw new Error(`上传失败: ${statusCode}`);
+      const response = await submitActivityRecord(intent);
+      if (response.statusCode !== 200 || typeof response.data?.id !== "string") {
+        if (response.statusCode >= 400 && response.statusCode < 500) (this as any)._danmakuIntent = null;
+        throw new Error(response.data?.error || "发送失败，请重试");
       }
+      (this as any)._danmakuIntent = null;
+      if ((this as any)._unloaded) return;
+      if (this.data.textContent === textContent) this.setData({ textContent: "" });
+      if ((this as any)._activityVisible !== false && this.data.activeDanmaku?.id === intent.placement_id) this.selectComponent("#main-frame")?.showDanmakuInXR(sendText, response.data);
     } catch (err) {
-      console.error("[上传] 错误:", err);
-      wx.showToast({ title: "发送失败", icon: "error" });
+      console.error("[活动留言] 发送失败:", err);
+      if (!(this as any)._unloaded) wx.showToast({ title: "发送失败，内容已保留", icon: "none" });
     } finally {
-      this.setData({ isSubmitting: false });
+      if (!(this as any)._unloaded) {
+        this.setData({ isSubmitting: false });
+        this.refreshCanSubmit();
+      }
     }
   },
 
@@ -273,9 +364,8 @@ Page({
   },
 
   onOrgConfigLoad(e: WechatMiniprogram.CustomEvent) {
-    const { shopCheckinEnabled, footerEnabled } = e.detail;
+    const { footerEnabled } = e.detail;
     this.setData({
-      shopCheckinEnabled: shopCheckinEnabled === true,
       footerEnabled: !!footerEnabled,
     });
   },

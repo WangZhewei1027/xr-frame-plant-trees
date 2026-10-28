@@ -54,17 +54,23 @@ async function main() {
     const { backend, calls } = loadBackend(env, false, platform);
     await backend.fetchOrganizations(["org"]);
     await backend.fetchWorkspaces(["workspace"]);
-    for (const name of ["get_nearby_assets", "get_scene_asset", "get_huge_assets", "get_shop_assets", "upload_text_asset"]) {
+    for (const name of ["get_nearby_assets", "get_scene_asset", "get_huge_assets"]) {
       await backend.backendRpc(name, { p_workspace_id: "workspace" });
     }
+    await backend.fetchActivities("workspace", "org");
+    await backend.fetchActivityRecords("placement", { latitude: 31, longitude: 121 }, 50);
+    await backend.fetchActivityProgress("placement", "participant");
+    await backend.submitActivityRecord({ placement_id: "placement" });
     assert.deepEqual(calls.map((call) => call.url), [
       `${base}/api/miniapp/organizations?ids=org`,
       `${base}/api/miniapp/workspaces?ids=workspace`,
       `${base}/api/miniapp/assets/nearby`,
       `${base}/api/miniapp/assets/scene`,
       `${base}/api/miniapp/assets/huge`,
-      `${base}/api/miniapp/shops`,
-      `${base}/api/miniapp/text-assets`,
+      `${base}/api/miniapp/activities?workspace_id=workspace&organization_id=org`,
+      `${base}/api/miniapp/activity-records?placement_id=placement&user_lat=31&user_lng=121&max_distance_meters=50`,
+      `${base}/api/miniapp/activity-progress?placement_id=placement&participant_id=participant`,
+      `${base}/api/miniapp/activity-records`,
     ]);
     assert.equal(backend.RECOGNIZE_API.baseUrl + backend.RECOGNIZE_API.path,
       `${base}/api/miniapp/anchors/recognize`);
@@ -72,9 +78,9 @@ async function main() {
   }
 
   const { backend, calls } = loadBackend("develop", true);
-  await assert.rejects(backend.backendRpc("upload_text_asset", {}), /unavailable/);
+  await assert.rejects(backend.submitActivityRecord({ placement_id: "placement" }), /unavailable/);
   assert.equal(calls.length, 1, "failed local writes must not retry against production");
-  assert.equal(calls[0].url, `${testLanUrl}/api/miniapp/text-assets`);
+  assert.equal(calls[0].url, `${testLanUrl}/api/miniapp/activity-records`);
   assert.throws(() => loadBackend("develop", false, "ios", ""), /未检测到电脑局域网地址/);
   assert.equal(loadBackend("develop", false, "devtools", "").backend.RECOGNIZE_API.baseUrl, "http://127.0.0.1:3000");
   for (const env of ["trial", "release"]) {
